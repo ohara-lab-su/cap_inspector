@@ -29,13 +29,24 @@ class CapInspector:
         self.angle_history = deque(maxlen=smooth_frames)
         self.smooth_frames = smooth_frames
         self.threshold_val = threshold_val
-        self.logger = logger
+        self.logger = logger if logger is not None else XLogger(logger_name="cap_inspector")
+        self.logger.info(
+            f"CapInspector initialized: camera_id={self.camera_id}, "
+            f"roi_x_range={self.roi_x_range}, roi_y_range={self.roi_y_range}, "
+            f"angle_limit={self.angle_limit}, threshold_val={self.threshold_val}, "
+            f"min_aspect_ratio={self.min_aspect_ratio}, smooth_frames={self.smooth_frames}"
+        )
 
     def start_camera(self):
         """カメラの開始"""
-        self.logger.info(f"== start_camera camera_id = {self.camera_id}==")
+        self.logger.info(f"Camera open requested: camera_id={self.camera_id}")
         self.cap = cv2.VideoCapture(self.camera_id)
-        return self.cap.isOpened()
+        opened = self.cap.isOpened()
+        if opened:
+            self.logger.info(f"Camera opened: camera_id={self.camera_id}")
+        else:
+            self.logger.error(f"Camera open failed: camera_id={self.camera_id}")
+        return opened
 
     def process_frame(self, frame):
         """1フレームあたりのキャップ検出と傾き判定"""
@@ -174,12 +185,14 @@ class CapInspector:
 
     def set_parameters(self, parameters):
         """認識パラメータをまとめて更新する。既存キーのみ受け付ける。"""
+        self.logger.info(f"Parameter update requested: {parameters}")
         allowed = {
             "camera_id", "roi_x_range", "roi_y_range", "angle_limit",
             "threshold_val", "min_aspect_ratio", "smooth_frames",
         }
         unknown = set(parameters) - allowed
         if unknown:
+            self.logger.warning(f"Unknown parameters rejected: {sorted(unknown)}")
             raise ValueError(f"unknown parameters: {sorted(unknown)}")
 
         if "camera_id" in parameters:
@@ -197,12 +210,15 @@ class CapInspector:
         if "smooth_frames" in parameters:
             self.smooth_frames = int(parameters["smooth_frames"])
             self.angle_history = deque(self.angle_history, maxlen=self.smooth_frames)
-        return self.get_parameters()
+        current = self.get_parameters()
+        self.logger.info(f"Parameters updated: {current}")
+        return current
 
     def get_status(self):
         """現在の1フレームを判定し、is_safe と reason を返す。"""
         frame = self._read_frame()
         _, is_safe, reason = self.process_frame(frame)
+        self.logger.debug(f"Inspection status: is_safe={bool(is_safe)}, reason={reason}")
         return {"is_safe": bool(is_safe), "reason": reason}
 
     def get_image(self, jpeg_quality=85):
@@ -223,10 +239,22 @@ class CapInspector:
 
     def image_stream(self, jpeg_quality=85, interval_sec=0.1):
         """GUI確認用に認識結果JPEGを連続配信する generator。"""
-        while True:
-            yield self.get_image(jpeg_quality=jpeg_quality)
-            if interval_sec > 0:
-                time.sleep(float(interval_sec))
+        self.logger.info(
+            f"Image stream started: jpeg_quality={jpeg_quality}, interval_sec={interval_sec}"
+        )
+        try:
+            while True:
+                yield self.get_image(jpeg_quality=jpeg_quality)
+                if interval_sec > 0:
+                    time.sleep(float(interval_sec))
+        except GeneratorExit:
+            self.logger.info("Image stream closed by client")
+            raise
+        except Exception:
+            self.logger.exception("Image stream failed")
+            raise
+        finally:
+            self.logger.info("Image stream stopped")
 
     def _read_frame(self):
         """カメラから1フレーム取得する。未起動なら自動的に開始する。"""
@@ -277,9 +305,13 @@ class CapInspector:
 
     def release(self):
         """リソースの解放"""
+        self.logger.info("CapInspector release requested")
         if self.cap:
             self.cap.release()
+            self.cap = None
+            self.logger.info("Camera released")
         cv2.destroyAllWindows()
+        self.logger.info("CapInspector released")
 
 
 # --- 実行用コード ---

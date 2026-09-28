@@ -1,3 +1,6 @@
-from .cap_inspector import CapInspector
+"""CapInspector public API."""
 
-__all__ = ["CapInspector"]
+from .cap_inspector import CapInspector
+from .client import CapInspectorClient
+
+__all__ = ("CapInspector", "CapInspectorClient")
