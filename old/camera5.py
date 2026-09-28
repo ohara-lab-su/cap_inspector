@@ -2,7 +2,7 @@ from collections import deque
 import math
 import cv2
 import numpy as np
-
+from x_logger import XLogger
 
 class CapDetector:
 
@@ -58,7 +58,8 @@ class CapDetector:
 
         # 2. HSVによる白の抽出（V>=210で厳しく判定）
         hsv_roi = cv2.cvtColor(roi, cv2.COLOR_BGR2HSV)
-        lower_white = np.array([0, 0, 210])
+        #lower_white = np.array([0, 0, 210])
+        lower_white = np.array([0, 0, self.threshold_val])
         upper_white = np.array([180, 30, 255])
         thresh = cv2.inRange(hsv_roi, lower_white, upper_white)
 
@@ -73,7 +74,7 @@ class CapDetector:
         valid_caps = []
         for cnt in contours:
             area = cv2.contourArea(cnt)
-            if area < 800:
+            if area < 800:  # 小さすぎる物体を無視
                 continue
 
             rx, ry, rw, rh = cv2.boundingRect(cnt)
@@ -82,11 +83,11 @@ class CapDetector:
 
             aspect_ratio = float(rw) / rh
 
-            # アスペクト比1.5〜4.0 ＆ ROI中央付近（20%以内）の条件チェック
+            # アスペクト比1.5〜4.0 ＆ ROI中央付近（20%以内）の条件チェック #縦横比が横長長方形でないものを無視
             if 1.5 <= aspect_ratio <= 4.0:
                 cnt_center_x = rx + (rw / 2.0)
                 dist_from_center = abs(cnt_center_x - roi_center_x)
-                if dist_from_center < (roi_w * 0.20):
+                if dist_from_center < (roi_w * 0.20): # ROI領域のX軸中央付近（20%以内）にある物体だけを判定対象として選定
                     valid_caps.append((area, cnt, rx, ry, rw, rh))
 
         # 候補がない場合（キャップが映っていない状態）
@@ -203,6 +204,7 @@ class CapDetector:
 
 # --- 実行用コード ---
 if __name__ == "__main__":
+    logger = XLogger()
     detector = CapDetector(
         camera_id=1,
         angle_limit=3.0,  # 許容角度（3度以上で停止）
