@@ -1,5 +1,6 @@
 from collections import deque
 import math
+import time
 import cv2
 import numpy as np
 from x_logger import XLogger
@@ -26,6 +27,7 @@ class CapInspector:
         self.min_aspect_ratio = min_aspect_ratio
         self.cap = None
         self.angle_history = deque(maxlen=smooth_frames)
+        self.smooth_frames = smooth_frames
         self.threshold_val = threshold_val
         self.logger = logger
 
@@ -60,7 +62,7 @@ class CapInspector:
 
         # 2. HSVによる白の抽出（V>=210で厳しく判定）
         hsv_roi = cv2.cvtColor(roi, cv2.COLOR_BGR2HSV)
-        lower_white = np.array([0, 0, 210])
+        lower_white = np.array([0, 0, self.threshold_val])
         upper_white = np.array([180, 30, 255])
         thresh = cv2.inRange(hsv_roi, lower_white, upper_white)
 
@@ -156,6 +158,85 @@ class CapInspector:
         )
 
         return frame, True, None
+
+
+    def get_parameters(self):
+        """現在の認識パラメータを返す。"""
+        return {
+            "camera_id": self.camera_id,
+            "roi_x_range": self.roi_x_range,
+            "roi_y_range": self.roi_y_range,
+            "angle_limit": self.angle_limit,
+            "threshold_val": self.threshold_val,
+            "min_aspect_ratio": self.min_aspect_ratio,
+            "smooth_frames": self.smooth_frames,
+        }
+
+    def set_parameters(self, parameters):
+        """認識パラメータをまとめて更新する。既存キーのみ受け付ける。"""
+        allowed = {
+            "camera_id", "roi_x_range", "roi_y_range", "angle_limit",
+            "threshold_val", "min_aspect_ratio", "smooth_frames",
+        }
+        unknown = set(parameters) - allowed
+        if unknown:
+            raise ValueError(f"unknown parameters: {sorted(unknown)}")
+
+        if "camera_id" in parameters:
+            self.camera_id = int(parameters["camera_id"])
+        if "roi_x_range" in parameters:
+            self.roi_x_range = tuple(float(v) for v in parameters["roi_x_range"])
+        if "roi_y_range" in parameters:
+            self.roi_y_range = tuple(float(v) for v in parameters["roi_y_range"])
+        if "angle_limit" in parameters:
+            self.angle_limit = float(parameters["angle_limit"])
+        if "threshold_val" in parameters:
+            self.threshold_val = int(parameters["threshold_val"])
+        if "min_aspect_ratio" in parameters:
+            self.min_aspect_ratio = float(parameters["min_aspect_ratio"])
+        if "smooth_frames" in parameters:
+            self.smooth_frames = int(parameters["smooth_frames"])
+            self.angle_history = deque(self.angle_history, maxlen=self.smooth_frames)
+        return self.get_parameters()
+
+    def get_status(self):
+        """現在の1フレームを判定し、is_safe と reason を返す。"""
+        frame = self._read_frame()
+        _, is_safe, reason = self.process_frame(frame)
+        return {"is_safe": bool(is_safe), "reason": reason}
+
+    def get_image(self, jpeg_quality=85):
+        """現在の認識結果を描画したJPEG画像を bytes で返す。"""
+        frame = self._read_frame()
+        processed_frame, is_safe, reason = self.process_frame(frame)
+        ok, encoded = cv2.imencode(
+            ".jpg", processed_frame,
+            [int(cv2.IMWRITE_JPEG_QUALITY), int(jpeg_quality)],
+        )
+        if not ok:
+            raise RuntimeError("JPEG encoding failed")
+        return {
+            "image": encoded.tobytes(),
+            "is_safe": bool(is_safe),
+            "reason": reason,
+        }
+
+    def image_stream(self, jpeg_quality=85, interval_sec=0.1):
+        """GUI確認用に認識結果JPEGを連続配信する generator。"""
+        while True:
+            yield self.get_image(jpeg_quality=jpeg_quality)
+            if interval_sec > 0:
+                time.sleep(float(interval_sec))
+
+    def _read_frame(self):
+        """カメラから1フレーム取得する。未起動なら自動的に開始する。"""
+        if self.cap is None or not self.cap.isOpened():
+            if not self.start_camera():
+                raise RuntimeError(f"camera open failed: camera_id={self.camera_id}")
+        ret, frame = self.cap.read()
+        if not ret or frame is None:
+            raise RuntimeError("camera frame read failed")
+        return frame
 
     def _draw_stop_message(self, frame, message):
         """停止警告テキストの描画"""
