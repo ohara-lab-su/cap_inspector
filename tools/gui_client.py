@@ -5,22 +5,25 @@ from tkinter import ttk, messagebox
 import cv2
 import numpy as np
 from PIL import Image, ImageTk
-from grpc_frame.grpc_client import GrpcClient
+from cap_inspector import CapInspectorClient
 
 
 class CapInspectorGUI:
     def __init__(self, root, host="127.0.0.1", port=50051):
         self.root = root
         self.root.title("CapInspector")
-        self.client = GrpcClient(
-            host, port,
-            grpc_options=(("grpc.max_receive_message_length", 16 * 1024 * 1024),),
-        )
+        self.client = CapInspectorClient(host, port)
         self.running = True
         self.vars = {}
+        self.current_image_size = None
+        self.roi_start = None
+        self.roi_rect = None
 
-        self.image_label = ttk.Label(root)
-        self.image_label.grid(row=0, column=0, rowspan=20, padx=8, pady=8)
+        self.image_canvas = tk.Canvas(root, highlightthickness=1, highlightbackground="gray")
+        self.image_canvas.grid(row=0, column=0, rowspan=20, padx=8, pady=8)
+        self.image_canvas.bind("<ButtonPress-1>", self._roi_press)
+        self.image_canvas.bind("<B1-Motion>", self._roi_drag)
+        self.image_canvas.bind("<ButtonRelease-1>", self._roi_release)
 
         params = self.client.get_parameters()
         row = 0
@@ -89,10 +92,54 @@ class CapInspectorGUI:
         if not self.running:
             return
         photo = ImageTk.PhotoImage(image=image)
-        self.image_label.configure(image=photo)
-        self.image_label.image = photo
+        width, height = image.size
+        self.current_image_size = (width, height)
+        self.image_canvas.configure(width=width, height=height)
+        self.image_canvas.delete("frame")
+        self.image_canvas.create_image(0, 0, anchor="nw", image=photo, tags="frame")
+        self.image_canvas.tag_lower("frame")
+        self.image_canvas.image = photo
         reason = item.get("reason")
         self.status_var.set(f"is_safe: {item.get('is_safe')}" + (f" / {reason}" if reason else ""))
+
+    def _roi_press(self, event):
+        if self.current_image_size is None:
+            return
+        self.roi_start = self._clamp_canvas_point(event.x, event.y)
+        if self.roi_rect is not None:
+            self.image_canvas.delete(self.roi_rect)
+        x, y = self.roi_start
+        self.roi_rect = self.image_canvas.create_rectangle(x, y, x, y, width=2)
+
+    def _roi_drag(self, event):
+        if self.roi_start is None or self.roi_rect is None:
+            return
+        x, y = self._clamp_canvas_point(event.x, event.y)
+        x0, y0 = self.roi_start
+        self.image_canvas.coords(self.roi_rect, x0, y0, x, y)
+
+    def _roi_release(self, event):
+        if self.roi_start is None or self.current_image_size is None:
+            return
+        x1, y1 = self._clamp_canvas_point(event.x, event.y)
+        x0, y0 = self.roi_start
+        self.roi_start = None
+
+        left, right = sorted((x0, x1))
+        top, bottom = sorted((y0, y1))
+        width, height = self.current_image_size
+        if right - left < 2 or bottom - top < 2:
+            return
+
+        roi_x = (left / width, right / width)
+        roi_y = (top / height, bottom / height)
+        self.vars["roi_x_range"].set(f"{roi_x[0]:.6f}, {roi_x[1]:.6f}")
+        self.vars["roi_y_range"].set(f"{roi_y[0]:.6f}, {roi_y[1]:.6f}")
+        self.apply_parameters()
+
+    def _clamp_canvas_point(self, x, y):
+        width, height = self.current_image_size
+        return max(0, min(x, width)), max(0, min(y, height))
 
     def close(self):
         self.running = False
