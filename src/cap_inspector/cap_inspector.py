@@ -17,6 +17,8 @@ class CapInspector:
         threshold_val=210,
         min_aspect_ratio=1.9,  # 1.9未満で傾き・浮き検知
         smooth_frames=3,
+        mode="closed",  # ★追加: デフォルトの判定モード ("closed" または "open")
+        cap_actual_width_mm=30.0,  # ★追加: 実際のキャップ横幅(mm)
         logger=None,
     ):
         """カメラと検出パラメータの初期化"""
@@ -29,9 +31,13 @@ class CapInspector:
         self.angle_history = deque(maxlen=smooth_frames)
         self.smooth_frames = smooth_frames
         self.threshold_val = threshold_val
+        self.mode = mode  # ★追加
+        self.cap_actual_width_mm = cap_actual_width_mm  # ★追加
         self._is_safe = None
         self._reason = None
-        self.logger = logger if logger is not None else XLogger(logger_name="cap_inspector")
+        self.logger = (
+            logger if logger is not None else XLogger(logger_name="cap_inspector")
+        )
         self.logger.info(
             f"CapInspector initialized: camera_id={self.camera_id}, "
             f"roi_x_range={self.roi_x_range}, roi_y_range={self.roi_y_range}, "
@@ -113,72 +119,107 @@ class CapInspector:
                 if dist_from_center < (roi_w * 0.20):
                     valid_caps.append((area, cnt, rx, ry, rw, rh))
 
-        # 候補がない場合（キャップが映っていない状態）
-        if not valid_caps:
-            return frame, True, None
+                # 候補がない場合（キャップが見つからない）
+                if not valid_caps:
+                    error_msg = "FAIL: Cap Not Found"
+                    self._draw_stop_message(frame, error_msg)
+                    return frame, False, error_msg
 
-        # 4. 最も大きな白オブジェクト（本物のキャップ）を選択
-        valid_caps.sort(key=lambda item: item[0], reverse=True)
-        _, best_cnt, rx, ry, rw, rh = valid_caps[0]
+            # 4. 最も大きな白オブジェクト（本物のキャップ）を選択
+            valid_caps.sort(key=lambda item: item[0], reverse=True)
+            _, best_cnt, rx, ry, rw, rh = valid_caps[0]
 
-        # ROI内から画面全体の絶対座標への変換
-        abs_x = roi_start_x + rx
-        abs_y = roi_start_y + ry
-        abs_bottom_y = abs_y + rh
+            # ROI内から画面全体の絶対座標への変換
+            abs_x = roi_start_x + rx
+            abs_y = roi_start_y + ry
+            abs_bottom_y = abs_y + rh
 
-        # --- A. アスペクト比判定 (片側が浮くと枠の高さが増えて比率が下がる) ---
-        aspect_ratio = float(rw) / rh
-        if aspect_ratio < self.min_aspect_ratio:
-            error_msg = f"STOP: Gap/Tilt Detected (Aspect: {aspect_ratio:.2f} < {self.min_aspect_ratio:.2f})"
-            self._draw_stop_message(frame, error_msg)
-            return frame, False, error_msg
+            # === 1. mm/pixel 換算の計算 ===
+            # 画像上のキャップ横幅(rw px)と実際の横幅(mm)から1ピクセルあたりのmmを算出
+            mm_per_pixel = self.cap_actual_width_mm / float(rw)
 
-        # --- B. 最小外接矩形による回転角度判定 ---
-        rect = cv2.minAreaRect(best_cnt)
-        (cx, cy), (w_r, h_r), rect_angle = rect
+            # === 2. 瓶とキャップの隙間(gap_mm)の計算 ===
+            # ここではROIの底面(roi_end_y)を「瓶の設置基準位置」として計算しています
+            bottle_top_y = roi_end_y
+            gap_px = bottle_top_y - abs_bottom_y
+            gap_mm = gap_px * mm_per_pixel
 
-        if w_r > 0 and h_r > 0:
-            if w_r < h_r:
-                calc_angle = abs(rect_angle)
+            # === 3. 角度の計算 ===
+            rect = cv2.minAreaRect(best_cnt)
+            (cx, cy), (w_r, h_r), rect_angle = rect
+
+            if w_r > 0 and h_r > 0:
+                if w_r < h_r:
+                    calc_angle = abs(rect_angle)
+                else:
+                    calc_angle = abs(rect_angle - 90)
+
+                if calc_angle > 45:
+                    calc_angle = abs(90 - calc_angle)
             else:
-                calc_angle = abs(rect_angle - 90)
+                calc_angle = 0.0
 
-            if calc_angle > 45:
-                calc_angle = abs(90 - calc_angle)
-        else:
-            calc_angle = 0.0
+            # 角度の平滑化
+            self.angle_history.append(calc_angle)
+            smoothed_angle = sum(self.angle_history) / len(self.angle_history)
 
-        # 角度の平滑化（平均化）
-        self.angle_history.append(calc_angle)
-        smoothed_angle = sum(self.angle_history) / len(self.angle_history)
+            # 水平かどうか（許容角度内か）の判定
+            is_horizontal = smoothed_angle <= self.angle_limit
 
-        # 限界角度オーバー判定
-        if smoothed_angle >= self.angle_limit:
-            error_msg = f"STOP: Angle {smoothed_angle:.1f} deg >= {self.angle_limit} deg"
-            self._draw_stop_message(frame, error_msg)
-            return frame, False, error_msg
+            # === 4. モード別の「高さ＋水平」条件判定 ===
+            is_success = False
+            reason = None
 
-        # 正常時の描画処理
-        cv2.putText(
-            frame,
-            f"Angle: {smoothed_angle:.1f} deg | Aspect: {aspect_ratio:.2f}",
-            (abs_x, max(20, abs_y - 10)),
-            cv2.FONT_HERSHEY_SIMPLEX,
-            0.5,
-            (0, 255, 0),
-            2,
-        )
-        cv2.rectangle(frame, (abs_x, abs_y), (abs_x + rw, abs_bottom_y), (0, 255, 0), 2)
-        cv2.line(
-            frame,
-            (abs_x, abs_bottom_y),
-            (abs_x + rw, abs_bottom_y),
-            (0, 255, 255),
-            3,
-        )
+            if self.mode == "open":
+                # 【蓋が開いている状態】 5mm程度（例: 4.0mm〜6.0mm）かつ 水平
+                target_gap_min = 4.0
+                target_gap_max = 6.0
 
-        return frame, True, None
+                if not is_horizontal:
+                    reason = f"OPEN FAIL: Angle {smoothed_angle:.1f}deg > {self.angle_limit}deg"
+                elif not (target_gap_min <= gap_mm <= target_gap_max):
+                    reason = f"OPEN FAIL: Gap {gap_mm:.2f}mm (Target: 4.0-6.0mm)"
+                else:
+                    is_success = True
 
+            elif self.mode == "closed":
+                # 【蓋が閉まっている状態】 0.5mm程度以下（例: 0.0mm〜1.0mm）かつ 水平
+                target_gap_max = 1.0
+
+                if not is_horizontal:
+                    reason = f"CLOSED FAIL: Angle {smoothed_angle:.1f}deg > {self.angle_limit}deg"
+                elif gap_mm > target_gap_max:
+                    reason = f"CLOSED FAIL: Gap {gap_mm:.2f}mm > {target_gap_max}mm"
+                else:
+                    is_success = True
+
+            # === 5. 結果の描画 ===
+            color = (0, 255, 0) if is_success else (0, 0, 255)  # 成功:緑 / 失敗:赤
+            status_str = "PASS" if is_success else "FAIL"
+
+            if not is_success:
+                self._draw_stop_message(frame, reason)
+
+            # 画面への情報描画
+            cv2.putText(
+                frame,
+                f"Mode:{self.mode} [{status_str}] Angle:{smoothed_angle:.1f}deg Gap:{gap_mm:.2f}mm",
+                (abs_x, max(20, abs_y - 10)),
+                cv2.FONT_HERSHEY_SIMPLEX,
+                0.5,
+                color,
+                2,
+            )
+            cv2.rectangle(frame, (abs_x, abs_y), (abs_x + rw, abs_bottom_y), color, 2)
+            cv2.line(
+                frame,
+                (abs_x, abs_bottom_y),
+                (abs_x + rw, abs_bottom_y),
+                (0, 255, 255),
+                2,
+            )
+
+            return frame, is_success, reason
 
     def get_parameters(self):
         """現在の認識パラメータを返す。"""
@@ -196,8 +237,13 @@ class CapInspector:
         """認識パラメータをまとめて更新する。既存キーのみ受け付ける。"""
         self.logger.info(f"Parameter update requested: {parameters}")
         allowed = {
-            "camera_id", "roi_x_range", "roi_y_range", "angle_limit",
-            "threshold_val", "min_aspect_ratio", "smooth_frames",
+            "camera_id",
+            "roi_x_range",
+            "roi_y_range",
+            "angle_limit",
+            "threshold_val",
+            "min_aspect_ratio",
+            "smooth_frames",
         }
         unknown = set(parameters) - allowed
         if unknown:
@@ -238,7 +284,6 @@ class CapInspector:
         """直近の inspect() による判定結果を返す。未判定時は None。"""
         return self._is_safe
 
-
     def get_status(self):
         """直近の inspect() による判定状態を返す。認識処理は実行しない。"""
         return {"is_safe": self._is_safe, "reason": self._reason}
@@ -248,7 +293,8 @@ class CapInspector:
         frame = self._read_frame()
         processed_frame, is_safe, reason = self.process_frame(frame)
         ok, encoded = cv2.imencode(
-            ".jpg", processed_frame,
+            ".jpg",
+            processed_frame,
             [int(cv2.IMWRITE_JPEG_QUALITY), int(jpeg_quality)],
         )
         if not ok:
@@ -346,7 +392,9 @@ if __name__ == "__main__":
     logger = XLogger()
     detector = CapInspector(
         camera_id=0,
+        mode="closed",  # デフォルトの判定モード ("closed" または "open")
         angle_limit=3.0,  # 許容角度（3度以上で停止）
+        cap_actual_width_mm=30.0,  # 実際のキャップの直径(mm)
         min_aspect_ratio=1.9,  # アスペクト比1.9未満（高さ増加）で停止
         threshold_val=210,  # 瓶の光反射を消すための二値化閾値
         logger=logger,
