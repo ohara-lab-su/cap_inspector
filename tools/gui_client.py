@@ -9,7 +9,7 @@ from cap_inspector import CapInspectorClient
 
 
 class CapInspectorGUI:
-    def __init__(self, root, host="127.0.0.1", port=50051):
+    def __init__(self, root, host="10.170.10.55", port=50051):
         self.root = root
         self.root.title("CapInspector")
         self.client = CapInspectorClient(host, port)

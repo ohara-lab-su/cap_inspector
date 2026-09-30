@@ -2,7 +2,8 @@ from grpc_frame.grpc_server import create_grpc_server
 from cap_inspector import CapInspector
 from x_logger import XLogger
 
-HOST = "0.0.0.0"
+#HOST = "0.0.0.0"
+HOST = "10.170.10.55"
 PORT = 50051
 ADDRESS = f"{HOST}:{PORT}"
 
