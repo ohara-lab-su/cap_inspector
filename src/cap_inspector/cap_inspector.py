@@ -29,6 +29,8 @@ class CapInspector:
         self.angle_history = deque(maxlen=smooth_frames)
         self.smooth_frames = smooth_frames
         self.threshold_val = threshold_val
+        self._is_safe = None
+        self._reason = None
         self.logger = logger if logger is not None else XLogger(logger_name="cap_inspector")
         self.logger.info(
             f"CapInspector initialized: camera_id={self.camera_id}, "
@@ -36,6 +38,13 @@ class CapInspector:
             f"angle_limit={self.angle_limit}, threshold_val={self.threshold_val}, "
             f"min_aspect_ratio={self.min_aspect_ratio}, smooth_frames={self.smooth_frames}"
         )
+
+    def __del__(self):
+        """デストラクタでリソースを解放する。"""
+        try:
+            self.release()
+        except Exception:
+            pass
 
     def start_camera(self):
         """カメラの開始"""
@@ -214,12 +223,24 @@ class CapInspector:
         self.logger.info(f"Parameters updated: {current}")
         return current
 
-    def get_status(self):
-        """現在の1フレームを判定し、is_safe と reason を返す。"""
+    def inspect(self):
+        """現在の1フレームを判定し、判定状態を更新する。"""
         frame = self._read_frame()
         _, is_safe, reason = self.process_frame(frame)
-        self.logger.debug(f"Inspection status: is_safe={bool(is_safe)}, reason={reason}")
-        return {"is_safe": bool(is_safe), "reason": reason}
+        self._is_safe = bool(is_safe)
+        self._reason = reason
+        self.logger.debug(
+            f"Inspection completed: is_safe={self._is_safe}, reason={self._reason}"
+        )
+        return self._is_safe
+
+    def is_safe(self):
+        """直近の inspect() による判定結果を返す。未判定時は None。"""
+        return self._is_safe
+
+    def get_status(self):
+        """直近の inspect() による判定状態を返す。認識処理は実行しない。"""
+        return {"is_safe": self._is_safe, "reason": self._reason}
 
     def get_image(self, jpeg_quality=85):
         """現在の認識結果を描画したJPEG画像を bytes で返す。"""
@@ -303,13 +324,18 @@ class CapInspector:
 
         self.release()
 
-    def release(self):
-        """リソースの解放"""
-        self.logger.info("CapInspector release requested")
+    def stop_camera(self):
+        """カメラを停止して解放する。"""
+        self.logger.info("Camera stop requested")
         if self.cap:
             self.cap.release()
             self.cap = None
             self.logger.info("Camera released")
+
+    def release(self):
+        """リソースの解放"""
+        self.logger.info("CapInspector release requested")
+        self.stop_camera()
         cv2.destroyAllWindows()
         self.logger.info("CapInspector released")
 
