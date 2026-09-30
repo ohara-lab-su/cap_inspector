@@ -47,7 +47,7 @@ class CapDetector:
         roi_h, roi_w, _ = roi.shape
         roi_center_x = roi_w / 2.0
 
-        # 青色ガイド枠の描画（ROI視覚化）
+        # 青色ガイド枠の描画（ROI視覚化）青色を最大の輝度値にしている
         cv2.rectangle(
             frame,
             (roi_start_x, roi_start_y),
@@ -56,7 +56,7 @@ class CapDetector:
             1,
         )
 
-        # 2. HSVによる白の抽出（V>=210で厳しく判定）
+        # 2. HSVによる白の抽出
         hsv_roi = cv2.cvtColor(roi, cv2.COLOR_BGR2HSV)
         #lower_white = np.array([0, 0, 210])
         lower_white = np.array([0, 0, self.threshold_val])
