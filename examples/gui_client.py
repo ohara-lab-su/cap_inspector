@@ -9,7 +9,13 @@ from cap_inspector import CapInspectorClient
 
 
 class CapInspectorGUI:
-    def __init__(self, root, host="10.170.10.55", port=50051):
+    def __init__(
+        self,
+        root,
+        host="10.170.10.55",
+        # host="127.0.0.1",
+        port=50051,
+    ):
         self.root = root
         self.root.title("CapInspector")
         self.client = CapInspectorClient(host, port)
@@ -19,7 +25,9 @@ class CapInspectorGUI:
         self.roi_start = None
         self.roi_rect = None
 
-        self.image_canvas = tk.Canvas(root, highlightthickness=1, highlightbackground="gray")
+        self.image_canvas = tk.Canvas(
+            root, highlightthickness=1, highlightbackground="gray"
+        )
         self.image_canvas.grid(row=0, column=0, rowspan=20, padx=8, pady=8)
         self.image_canvas.bind("<ButtonPress-1>", self._roi_press)
         self.image_canvas.bind("<B1-Motion>", self._roi_drag)
@@ -27,14 +35,25 @@ class CapInspectorGUI:
 
         params = self.client.get_parameters()
         row = 0
-        for key in ("camera_id", "roi_x_range", "roi_y_range", "angle_limit",
-                    "threshold_val", "min_aspect_ratio", "smooth_frames"):
-            ttk.Label(root, text=key).grid(row=row, column=1, sticky="w", padx=4, pady=2)
+        for key in (
+            "camera_id",
+            "roi_x_range",
+            "roi_y_range",
+            "angle_limit",
+            "threshold_val",
+            "min_aspect_ratio",
+            "smooth_frames",
+        ):
+            ttk.Label(root, text=key).grid(
+                row=row, column=1, sticky="w", padx=4, pady=2
+            )
             value = params[key]
             if isinstance(value, (tuple, list)):
                 value = ", ".join(str(v) for v in value)
             var = tk.StringVar(value=str(value))
-            ttk.Entry(root, textvariable=var, width=24).grid(row=row, column=2, padx=4, pady=2)
+            ttk.Entry(root, textvariable=var, width=24).grid(
+                row=row, column=2, padx=4, pady=2
+            )
             self.vars[key] = var
             row += 1
 
@@ -56,6 +75,7 @@ class CapInspectorGUI:
             if len(values) != 2:
                 raise ValueError(f"{name} requires two values")
             return tuple(values)
+
         return {
             "camera_id": int(self.vars["camera_id"].get()),
             "roi_x_range": pair("roi_x_range"),
@@ -100,7 +120,9 @@ class CapInspectorGUI:
         self.image_canvas.tag_lower("frame")
         self.image_canvas.image = photo
         reason = item.get("reason")
-        self.status_var.set(f"is_safe: {item.get('is_safe')}" + (f" / {reason}" if reason else ""))
+        self.status_var.set(
+            f"is_safe: {item.get('is_safe')}" + (f" / {reason}" if reason else "")
+        )
 
     def _roi_press(self, event):
         if self.current_image_size is None:
