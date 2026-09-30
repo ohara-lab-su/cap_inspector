@@ -238,6 +238,7 @@ class CapInspector:
         """直近の inspect() による判定結果を返す。未判定時は None。"""
         return self._is_safe
 
+
     def get_status(self):
         """直近の inspect() による判定状態を返す。認識処理は実行しない。"""
         return {"is_safe": self._is_safe, "reason": self._reason}
