@@ -200,26 +200,57 @@ class CapInspector:
             if not is_success:
                 self._draw_stop_message(frame, reason)
 
-            # 画面への情報描画
-            cv2.putText(
-                frame,
-                f"Mode:{self.mode} [{status_str}] Angle:{smoothed_angle:.1f}deg Gap:{gap_mm:.2f}mm",
-                (abs_x, max(20, abs_y - 10)),
-                cv2.FONT_HERSHEY_SIMPLEX,
-                0.5,
-                color,
-                2,
-            )
-            cv2.rectangle(frame, (abs_x, abs_y), (abs_x + rw, abs_bottom_y), color, 2)
-            cv2.line(
-                frame,
-                (abs_x, abs_bottom_y),
-                (abs_x + rw, abs_bottom_y),
-                (0, 255, 255),
-                2,
-            )
+                # # 画面への情報描画
+                # cv2.putText(
+                #     frame,
+                #     f"Mode:{self.mode} [{status_str}] Angle:{smoothed_angle:.1f}deg Gap:{gap_mm:.2f}mm",
+                #     (abs_x, max(20, abs_y - 10)),
+                #     cv2.FONT_HERSHEY_SIMPLEX,
+                #     0.5,
+                #     color,
+                #     2,
+                # )
+                # cv2.rectangle(frame, (abs_x, abs_y), (abs_x + rw, abs_bottom_y), color, 2)
+                # cv2.line(
+                #     frame,
+                #     (abs_x, abs_bottom_y),
+                #     (abs_x + rw, abs_bottom_y),
+                #     (0, 255, 255),
+                #     2,
+                # )
+                #
+                # return frame, is_success, reason
+                # 正常（PASS）のときのみ緑色の枠線と情報を表示
+            if is_success:
+                    # 1. 上部の角度・アスペクト比・隙間情報テキスト（緑色）
+                    cv2.putText(
+                        frame,
+                        f"Mode:{self.mode} | Angle:{smoothed_angle:.1f}deg | Gap:{gap_mm:.2f}mm",
+                        (abs_x, max(20, abs_y - 10)),
+                        cv2.FONT_HERSHEY_SIMPLEX,
+                        0.5,
+                        (0, 255, 0),  # 緑色
+                        2,
+                    )
+                    # 2. キャップ全体の緑色枠
+                    cv2.rectangle(
+                        frame,
+                        (abs_x, abs_y),
+                        (abs_x + rw, abs_bottom_y),
+                        (0, 255, 0),  # 緑色
+                        2,
+                    )
+                    # 3. キャップ底面の黄色い強調線
+                    cv2.line(
+                        frame,
+                        (abs_x, abs_bottom_y),
+                        (abs_x + rw, abs_bottom_y),
+                        (0, 255, 255),  # 黄色
+                        3,
+                    )
 
-            return frame, is_success, reason
+                # 必ず 3 つの変数を返す
+                return frame, is_success, reason
 
     def get_parameters(self):
         """現在の認識パラメータを返す。"""
