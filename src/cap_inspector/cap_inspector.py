@@ -553,7 +553,7 @@ class CapInspector:
 if __name__ == "__main__":
     logger = XLogger()
     detector = CapInspector(
-        camera_id=1,
+        camera_id=0,
         mode="closed",  # デフォルトの判定モード ("closed" または "open")
         angle_limit=3.0,  # 許容角度（3度以上で停止）
         cap_actual_width_mm=40.0,  # 実際のキャップの直径(mm)
