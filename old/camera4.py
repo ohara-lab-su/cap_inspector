@@ -8,15 +8,15 @@ import numpy as np
 class CapDetector:
 
     def __init__(
-            self,
-            camera_id=1,
-            roi_x_range=(0.30, 0.70),  # ROI横幅 (30%〜70%)
-            roi_y_range=(0.0, 0.35),  # ROI高さ (0%〜35%)
-            angle_limit=3.0,  # 許容角度（度）
-            threshold_val=210,
-            min_aspect_ratio=1.9,  # 1.9未満で傾き・浮き検知
-            smooth_frames=3,
-            logger=None,
+        self,
+        camera_id=1,
+        roi_x_range=(0.30, 0.70),  # ROI横幅 (30%〜70%)
+        roi_y_range=(0.0, 0.35),  # ROI高さ (0%〜35%)
+        angle_limit=3.0,  # 許容角度（度）
+        threshold_val=210,
+        min_aspect_ratio=1.9,  # 1.9未満で傾き・浮き検知
+        smooth_frames=3,
+        logger=None,
     ):
         """カメラと検出パラメータの初期化"""
         self.camera_id = camera_id
@@ -244,7 +244,7 @@ if __name__ == "__main__":
 
     logger = XLogger()
     detector = CapDetector(
-        camera_id=1,
+        camera_id=0,
         angle_limit=3.0,  # 許容角度（3度以上で停止）
         min_aspect_ratio=1.9,  # アスペクト比1.9未満（高さ増加）で停止
         threshold_val=210,  # 瓶の光反射を消すための二値化閾値
