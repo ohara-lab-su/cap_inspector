@@ -15,10 +15,10 @@ class CapInspector:
         roi_y_range=(0.0, 0.35),  # ROI高さ (0%〜35%)
         angle_limit=3.0,  # 許容角度（度）
         threshold_val=170,
-        min_aspect_ratio=1.9,  # 1.9未満で傾き・浮き検知
+        min_aspect_ratio=1.5,  # 1.9未満で傾き・浮き検知
         smooth_frames=3,
         mode="closed",  # ★追加: デフォルトの判定モード ("closed" または "open")
-        cap_actual_width_mm=40.0,  # ★追加: 実際のキャップ横幅(mm)
+        cap_actual_width_mm=30.0,  # ★追加: 実際のキャップ横幅(mm)
         logger=None,
     ):
         """カメラと検出パラメータの初期化"""
@@ -38,7 +38,7 @@ class CapInspector:
         self.logger = (
             logger if logger is not None else XLogger(logger_name="cap_inspector")
         )
-        self.logger.info(f"== threshold {threshold_val}")
+        # self.logger.info(f"== threshold {threshold_val}")
 
         self.logger.info(
             f"CapInspector initialized: camera_id={self.camera_id}, "
@@ -91,11 +91,13 @@ class CapInspector:
         # 2. HSVによる白の抽出（Sの許容を広げ、V閾値を下げて側面の影もカバー）
         hsv_roi = cv2.cvtColor(roi, cv2.COLOR_BGR2HSV)
         lower_white = np.array([0, 0, self.threshold_val])
-        upper_white = np.array([180, 50, 255])
+        # upper_white = np.array([180, 50, 255])
+        upper_white = np.array([180, 30, 255])
         thresh = cv2.inRange(hsv_roi, lower_white, upper_white)
 
         # クロージング処理（膨張→収縮）で途切れ・隙間を結合する
-        kernel = np.ones((5, 5), np.uint8)
+        # kernel = np.ones((5, 5), np.uint8)
+        kernel = np.ones((3, 3), np.uint8)
         thresh = cv2.morphologyEx(thresh, cv2.MORPH_CLOSE, kernel)
         thresh = cv2.morphologyEx(thresh, cv2.MORPH_OPEN, kernel)
 
@@ -398,8 +400,8 @@ if __name__ == "__main__":
         camera_id=0,
         mode="closed",  # デフォルトの判定モード ("closed" または "open")
         angle_limit=3.0,  # 許容角度（3度以上で停止）
-        cap_actual_width_mm=40.0,  # 実際のキャップの直径(mm)
-        min_aspect_ratio=1.9,  # アスペクト比1.9未満（高さ増加）で停止
+        cap_actual_width_mm=30.0,  # 実際のキャップの直径(mm)
+        min_aspect_ratio=1.5,  # アスペクト比1.9未満（高さ増加）で停止
         threshold_val=170,  # 瓶の光反射を消すための二値化閾値
         logger=logger,
     )
