@@ -23,6 +23,7 @@ class CapInspector:
         cap_actual_width_mm=30.0,  # 実際のキャップ横幅(mm)
         close_position_limit_mm=1.0,  # 閉栓時のCAP底面位置の許容ずれ(mm)
         open_position_mm=5.0,  # 開栓とみなす基準底面からの最小移動量(mm)
+        close_size_ratio_limit=0.25,  # 閉栓時に許容する基準CAPサイズとの差の割合
         logger=None,
     ):
         """カメラと検出パラメータの初期化"""
@@ -39,6 +40,7 @@ class CapInspector:
         self.cap_actual_width_mm = cap_actual_width_mm
         self.close_position_limit_mm = close_position_limit_mm
         self.open_position_mm = open_position_mm
+        self.close_size_ratio_limit = close_size_ratio_limit
         self._is_safe = None
         self._reason = None
 
@@ -308,17 +310,55 @@ class CapInspector:
                 is_success = True
 
         elif self.mode == "closed":
-            # CLOSEはCAP底面がキャリブレーション時の基準底面位置に
-            # 許容範囲内で戻っていることを確認する。
+            # CLOSE成功条件:
+            # 1. 検出した領域がキャリブレーション時のCAPと同程度の大きさ。
+            # 2. CAPがキャリブレーション時から傾いていない。
+            # 3. CAP底面がキャリブレーション時の基準底面位置に戻っている。
+            #
+            # CAP自体が検出できない場合は、この分岐へ来る前にFAILになる。
+            # サイズ条件により、CAPを完全に取り外した際に別の白領域を
+            # CAPとして誤認してCLOSEになるケースを抑制する。
             mm_per_pixel = self.reference_cap["mm_per_pixel"]
+            angle_diff = abs(current_angle - self.reference_cap["angle"])
             bottom_diff_mm = (
                 abs(cap_info["bottom_y"] - self.reference_cap["bottom_y"])
                 * mm_per_pixel
             )
 
-            detail_str = f"Bottom:{bottom_diff_mm:.2f}mm"
+            reference_width = float(self.reference_cap["width"])
+            reference_height = float(self.reference_cap["height"])
+            width_ratio_diff = abs(
+                float(cap_info["width"]) / reference_width - 1.0
+            )
+            height_ratio_diff = abs(
+                float(cap_info["height"]) / reference_height - 1.0
+            )
 
-            if bottom_diff_mm > self.close_position_limit_mm:
+            detail_str = (
+                f"Bottom:{bottom_diff_mm:.2f}mm "
+                f"AngleDiff:{angle_diff:.1f}deg "
+                f"WidthDiff:{width_ratio_diff * 100.0:.1f}% "
+                f"HeightDiff:{height_ratio_diff * 100.0:.1f}%"
+            )
+
+            if width_ratio_diff > self.close_size_ratio_limit:
+                reason = (
+                    f"CLOSED FAIL: CAP width difference "
+                    f"{width_ratio_diff * 100.0:.1f}% > "
+                    f"{self.close_size_ratio_limit * 100.0:.1f}%"
+                )
+            elif height_ratio_diff > self.close_size_ratio_limit:
+                reason = (
+                    f"CLOSED FAIL: CAP height difference "
+                    f"{height_ratio_diff * 100.0:.1f}% > "
+                    f"{self.close_size_ratio_limit * 100.0:.1f}%"
+                )
+            elif angle_diff > self.angle_limit:
+                reason = (
+                    f"CLOSED FAIL: Angle difference "
+                    f"{angle_diff:.1f}deg > {self.angle_limit}deg"
+                )
+            elif bottom_diff_mm > self.close_position_limit_mm:
                 reason = (
                     f"CLOSED FAIL: Bottom position "
                     f"{bottom_diff_mm:.2f}mm > "
@@ -444,6 +484,7 @@ class CapInspector:
             "cap_actual_width_mm": self.cap_actual_width_mm,
             "close_position_limit_mm": self.close_position_limit_mm,
             "open_position_mm": self.open_position_mm,
+            "close_size_ratio_limit": self.close_size_ratio_limit,
         }
 
     def set_parameters(self, parameters):
@@ -461,6 +502,7 @@ class CapInspector:
             "cap_actual_width_mm",
             "close_position_limit_mm",
             "open_position_mm",
+            "close_size_ratio_limit",
         }
         unknown = set(parameters) - allowed
         if unknown:
@@ -495,6 +537,10 @@ class CapInspector:
             )
         if "open_position_mm" in parameters:
             self.open_position_mm = float(parameters["open_position_mm"])
+        if "close_size_ratio_limit" in parameters:
+            self.close_size_ratio_limit = float(
+                parameters["close_size_ratio_limit"]
+            )
 
         current = self.get_parameters()
         self.logger.info(f"Parameters updated: {current}")

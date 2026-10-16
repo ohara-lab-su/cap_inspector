@@ -148,6 +148,11 @@ class CapInspectorViewer(QMainWindow):
         self.close_callback = close_callback
         self.jpeg_quality = jpeg_quality
         self.interval_sec = interval_sec
+
+        # GUIを実行しているマシン上で読み書きするデフォルトファイル。
+        # 呼び出し側から引数として渡さない。
+        self.parameter_file = "cap_inspector_parameters.json"
+
         self.inputs: Dict[str, QLineEdit] = {}
         self._closed = False
         self.reference_cap: Optional[Dict[str, Any]] = None
@@ -169,6 +174,7 @@ class CapInspectorViewer(QMainWindow):
             "cap_actual_width_mm",
             "close_position_limit_mm",
             "open_position_mm",
+            "close_size_ratio_limit",
         ):
             value = params[key]
             if isinstance(value, (tuple, list)):
@@ -181,7 +187,7 @@ class CapInspectorViewer(QMainWindow):
         apply_button.clicked.connect(self.apply_parameters)
         form_layout.addRow(apply_button)
 
-        self.parameter_file_input = QLineEdit("cap_inspector_parameters.json")
+        self.parameter_file_input = QLineEdit(self.parameter_file)
         form_layout.addRow("parameter_file", self.parameter_file_input)
 
         file_buttons = QHBoxLayout()
@@ -266,6 +272,9 @@ class CapInspectorViewer(QMainWindow):
             ),
             "open_position_mm": float(
                 self.inputs["open_position_mm"].text()
+            ),
+            "close_size_ratio_limit": float(
+                self.inputs["close_size_ratio_limit"].text()
             ),
         }
 
