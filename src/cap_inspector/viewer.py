@@ -142,14 +142,12 @@ class CapInspectorViewer(QMainWindow):
         close_callback: Optional[Callable[[], None]] = None,
         jpeg_quality: int = 85,
         interval_sec: float = 0.1,
-        parameter_file: str = "cap_inspector_parameters.json",
     ) -> None:
         super().__init__()
         self.inspector = inspector
         self.close_callback = close_callback
         self.jpeg_quality = jpeg_quality
         self.interval_sec = interval_sec
-        self.parameter_file = parameter_file
         self.inputs: Dict[str, QLineEdit] = {}
         self._closed = False
         self.reference_cap: Optional[Dict[str, Any]] = None
@@ -169,7 +167,8 @@ class CapInspectorViewer(QMainWindow):
             "min_aspect_ratio",
             "smooth_frames",
             "cap_actual_width_mm",
-            "position_limit_mm",
+            "close_position_limit_mm",
+            "open_position_mm",
         ):
             value = params[key]
             if isinstance(value, (tuple, list)):
@@ -182,7 +181,7 @@ class CapInspectorViewer(QMainWindow):
         apply_button.clicked.connect(self.apply_parameters)
         form_layout.addRow(apply_button)
 
-        self.parameter_file_input = QLineEdit(self.parameter_file)
+        self.parameter_file_input = QLineEdit("cap_inspector_parameters.json")
         form_layout.addRow("parameter_file", self.parameter_file_input)
 
         file_buttons = QHBoxLayout()
@@ -262,20 +261,19 @@ class CapInspectorViewer(QMainWindow):
             "cap_actual_width_mm": float(
                 self.inputs["cap_actual_width_mm"].text()
             ),
-            "position_limit_mm": float(
-                self.inputs["position_limit_mm"].text()
+            "close_position_limit_mm": float(
+                self.inputs["close_position_limit_mm"].text()
+            ),
+            "open_position_mm": float(
+                self.inputs["open_position_mm"].text()
             ),
         }
 
-    def apply_parameters(self) -> bool:
+    def apply_parameters(self) -> None:
         try:
-            parameters = self.inspector.set_parameters(self._parse_parameters())
-            self._update_inputs(parameters)
-            self.status_label.setText("parameters applied")
-            return True
+            self.inspector.set_parameters(self._parse_parameters())
         except Exception as exc:
             QMessageBox.critical(self, "Parameter error", str(exc))
-            return False
 
     def _update_inputs(self, parameters: Dict[str, Any]) -> None:
         for key, value in parameters.items():
@@ -299,8 +297,7 @@ class CapInspectorViewer(QMainWindow):
 
     def save_parameters(self) -> None:
         try:
-            if not self.apply_parameters():
-                return
+            self.apply_parameters()
             filename = self.parameter_file_input.text().strip()
             if not filename:
                 raise ValueError("parameter file is empty")
@@ -318,17 +315,13 @@ class CapInspectorViewer(QMainWindow):
             parameters = self.inspector.load_parameters(filename)
             self._update_inputs(parameters)
             self.reference_cap = self.inspector.get_reference_cap()
-            self.calibration_label.setText(
-                "calibration: parameters loaded / confirm or recalibrate"
-            )
             self.status_label.setText("parameters loaded: " + filename)
         except Exception as exc:
             QMessageBox.critical(self, "Load error", str(exc))
 
     def calibrate(self) -> None:
         try:
-            if not self.apply_parameters():
-                return
+            self.apply_parameters()
             result = bool(self.inspector.calibrate())
             self.reference_cap = self.inspector.get_reference_cap()
             if result:
@@ -437,11 +430,7 @@ class CapInspectorViewer(QMainWindow):
     ) -> None:
         self.inputs["roi_x_range"].setText("{:.6f}, {:.6f}".format(left, right))
         self.inputs["roi_y_range"].setText("{:.6f}, {:.6f}".format(top, bottom))
-        if self.apply_parameters():
-            self.reference_cap = None
-            self.calibration_label.setText(
-                "calibration: ROI changed / recalibration required"
-            )
+        self.apply_parameters()
 
     def closeEvent(self, event: Any) -> None:
         if self._closed:
@@ -461,7 +450,6 @@ def run_viewer(
     close_callback: Optional[Callable[[], None]] = None,
     jpeg_quality: int = 85,
     interval_sec: float = 0.1,
-    parameter_file: str = "cap_inspector_parameters.json",
 ) -> int:
     """CapInspectorViewer を起動する。"""
     app = QApplication.instance()
@@ -475,7 +463,6 @@ def run_viewer(
         close_callback=close_callback,
         jpeg_quality=jpeg_quality,
         interval_sec=interval_sec,
-        parameter_file=parameter_file,
     )
     viewer.show()
 

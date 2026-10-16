@@ -21,7 +21,8 @@ class CapInspector:
         smooth_frames=3,
         mode="closed",  # デフォルトの判定モード ("closed" または "open")
         cap_actual_width_mm=30.0,  # 実際のキャップ横幅(mm)
-        position_limit_mm=1.0,  # 閉栓時に許容する基準位置からのずれ(mm)
+        close_position_limit_mm=1.0,  # 閉栓時のCAP底面位置の許容ずれ(mm)
+        open_position_mm=5.0,  # 開栓とみなす基準底面からの最小移動量(mm)
         logger=None,
     ):
         """カメラと検出パラメータの初期化"""
@@ -36,7 +37,8 @@ class CapInspector:
         self.threshold_val = threshold_val
         self.mode = mode
         self.cap_actual_width_mm = cap_actual_width_mm
-        self.position_limit_mm = position_limit_mm
+        self.close_position_limit_mm = close_position_limit_mm
+        self.open_position_mm = open_position_mm
         self._is_safe = None
         self._reason = None
 
@@ -278,50 +280,49 @@ class CapInspector:
             reason = "FAIL: Calibration Required"
 
         elif self.mode == "open":
-            # 開栓後はCAPが傾いていないことを確認する。
+            # OPEN成功条件:
+            # 1. CAPがキャリブレーション時から傾いていないこと。
+            # 2. CAP底面が閉栓時の基準底面から上方へ所定距離以上離れていること。
+            mm_per_pixel = self.reference_cap["mm_per_pixel"]
             angle_diff = abs(current_angle - self.reference_cap["angle"])
-            detail_str = f"AngleDiff:{angle_diff:.1f}deg"
+            open_distance_mm = (
+                self.reference_cap["bottom_y"] - cap_info["bottom_y"]
+            ) * mm_per_pixel
+
+            detail_str = (
+                f"Open:{open_distance_mm:.2f}mm "
+                f"AngleDiff:{angle_diff:.1f}deg"
+            )
 
             if angle_diff > self.angle_limit:
                 reason = (
                     f"OPEN FAIL: Angle difference "
                     f"{angle_diff:.1f}deg > {self.angle_limit}deg"
                 )
+            elif open_distance_mm < self.open_position_mm:
+                reason = (
+                    f"OPEN FAIL: Bottom moved "
+                    f"{open_distance_mm:.2f}mm < {self.open_position_mm:.2f}mm"
+                )
             else:
                 is_success = True
 
         elif self.mode == "closed":
-            # 閉栓後はキャリブレーション時のCAP上端・下端位置と比較する。
+            # CLOSEはCAP底面がキャリブレーション時の基準底面位置に
+            # 許容範囲内で戻っていることを確認する。
             mm_per_pixel = self.reference_cap["mm_per_pixel"]
-            top_diff_mm = (
-                abs(cap_info["top_y"] - self.reference_cap["top_y"]) * mm_per_pixel
-            )
             bottom_diff_mm = (
                 abs(cap_info["bottom_y"] - self.reference_cap["bottom_y"])
                 * mm_per_pixel
             )
-            angle_diff = abs(current_angle - self.reference_cap["angle"])
 
-            detail_str = (
-                f"Top:{top_diff_mm:.2f}mm "
-                f"Bottom:{bottom_diff_mm:.2f}mm "
-                f"AngleDiff:{angle_diff:.1f}deg"
-            )
+            detail_str = f"Bottom:{bottom_diff_mm:.2f}mm"
 
-            if angle_diff > self.angle_limit:
-                reason = (
-                    f"CLOSED FAIL: Angle difference "
-                    f"{angle_diff:.1f}deg > {self.angle_limit}deg"
-                )
-            elif top_diff_mm > self.position_limit_mm:
-                reason = (
-                    f"CLOSED FAIL: Top position "
-                    f"{top_diff_mm:.2f}mm > {self.position_limit_mm:.2f}mm"
-                )
-            elif bottom_diff_mm > self.position_limit_mm:
+            if bottom_diff_mm > self.close_position_limit_mm:
                 reason = (
                     f"CLOSED FAIL: Bottom position "
-                    f"{bottom_diff_mm:.2f}mm > {self.position_limit_mm:.2f}mm"
+                    f"{bottom_diff_mm:.2f}mm > "
+                    f"{self.close_position_limit_mm:.2f}mm"
                 )
             else:
                 is_success = True
@@ -441,7 +442,8 @@ class CapInspector:
             "smooth_frames": self.smooth_frames,
             "mode": self.mode,
             "cap_actual_width_mm": self.cap_actual_width_mm,
-            "position_limit_mm": self.position_limit_mm,
+            "close_position_limit_mm": self.close_position_limit_mm,
+            "open_position_mm": self.open_position_mm,
         }
 
     def set_parameters(self, parameters):
@@ -457,7 +459,8 @@ class CapInspector:
             "smooth_frames",
             "mode",
             "cap_actual_width_mm",
-            "position_limit_mm",
+            "close_position_limit_mm",
+            "open_position_mm",
         }
         unknown = set(parameters) - allowed
         if unknown:
@@ -486,8 +489,12 @@ class CapInspector:
             self.mode = str(parameters["mode"])
         if "cap_actual_width_mm" in parameters:
             self.cap_actual_width_mm = float(parameters["cap_actual_width_mm"])
-        if "position_limit_mm" in parameters:
-            self.position_limit_mm = float(parameters["position_limit_mm"])
+        if "close_position_limit_mm" in parameters:
+            self.close_position_limit_mm = float(
+                parameters["close_position_limit_mm"]
+            )
+        if "open_position_mm" in parameters:
+            self.open_position_mm = float(parameters["open_position_mm"])
 
         current = self.get_parameters()
         self.logger.info(f"Parameters updated: {current}")
