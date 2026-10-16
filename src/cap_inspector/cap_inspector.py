@@ -169,6 +169,18 @@ class CapInspector:
                 f"aspect_ratio={aspect_ratio}"
             )
 
+            # ROIはCAPの探索範囲であり、CAPそのものではない。
+            # ROI全面（またはほぼ全面）を占める白領域はCAPとして採用しない。
+            roi_coverage_x = float(rw) / float(roi_w)
+            roi_coverage_y = float(rh) / float(roi_h)
+            if roi_coverage_x >= 0.95 and roi_coverage_y >= 0.95:
+                print(
+                    f"CAP候補除外: ROI全面に近い白領域 "
+                    f"coverage_x={roi_coverage_x:.3f}, "
+                    f"coverage_y={roi_coverage_y:.3f}"
+                )
+                continue
+
             if dist_from_center < (roi_w * 0.20):
                 valid_caps.append((area, cnt, rx, ry, rw, rh))
 
@@ -252,21 +264,21 @@ class CapInspector:
         abs_bottom_y = cap_info["bottom_y"]
         rw = cap_info["width"]
 
-        # 角度を平滑化する。
-        self.angle_history.append(cap_info["angle"])
-        smoothed_angle = sum(self.angle_history) / len(self.angle_history)
-        print(f"角度平滑化完了: smoothed_angle={smoothed_angle}")
+        # 開閉動作ごとに独立して判定するため、
+        # 前回判定時の角度は持ち越さない。
+        current_angle = cap_info["angle"]
+        print(f"角度計算結果: current_angle={current_angle}")
 
         is_success = False
         reason = None
-        detail_str = f"Angle:{smoothed_angle:.1f}deg"
+        detail_str = f"Angle:{current_angle:.1f}deg"
 
         if self.reference_cap is None:
             reason = "FAIL: Calibration Required"
 
         elif self.mode == "open":
             # 開栓後はCAPが傾いていないことを確認する。
-            angle_diff = abs(smoothed_angle - self.reference_cap["angle"])
+            angle_diff = abs(current_angle - self.reference_cap["angle"])
             detail_str = f"AngleDiff:{angle_diff:.1f}deg"
 
             if angle_diff > self.angle_limit:
@@ -287,7 +299,7 @@ class CapInspector:
                 abs(cap_info["bottom_y"] - self.reference_cap["bottom_y"])
                 * mm_per_pixel
             )
-            angle_diff = abs(smoothed_angle - self.reference_cap["angle"])
+            angle_diff = abs(current_angle - self.reference_cap["angle"])
 
             detail_str = (
                 f"Top:{top_diff_mm:.2f}mm "
@@ -374,7 +386,47 @@ class CapInspector:
                 1,
             )
 
+        self._is_safe = bool(is_success)
+        self._reason = reason
         return frame, is_success, reason
+
+    def is_open(self, frame=None):
+        """現在のCAPが開栓後の正常状態ならTrueを返す。"""
+        if frame is None:
+            frame = self._read_frame()
+
+        previous_mode = self.mode
+        self.mode = "open"
+        try:
+            _, result, reason = self.process_frame(frame)
+        finally:
+            self.mode = previous_mode
+
+        self._is_safe = bool(result)
+        self._reason = reason
+        return self._is_safe
+
+    def is_closed(self, frame=None):
+        """現在のCAPが正常な閉栓位置ならTrueを返す。"""
+        if frame is None:
+            frame = self._read_frame()
+
+        previous_mode = self.mode
+        self.mode = "closed"
+        try:
+            _, result, reason = self.process_frame(frame)
+        finally:
+            self.mode = previous_mode
+
+        self._is_safe = bool(result)
+        self._reason = reason
+        return self._is_safe
+
+    def get_reference_cap(self):
+        """キャリブレーションで検出した基準CAP範囲を返す。"""
+        if self.reference_cap is None:
+            return None
+        return dict(self.reference_cap)
 
     def get_parameters(self):
         """現在の認識パラメータを返す。"""
@@ -697,7 +749,7 @@ if __name__ == "__main__":
             roi_start_y = int(height * detector.roi_y_range[0])
             roi_end_y = int(height * detector.roi_y_range[1])
 
-            # ROI視覚化 (青枠)
+            # ROI視覚化 (青枠): CAPを探す探索範囲
             cv2.rectangle(
                 display_frame,
                 (roi_start_x, roi_start_y),
@@ -716,7 +768,8 @@ if __name__ == "__main__":
                     2,
                 )
 
-            # キャリブレーション済みの場合は基準CAP位置を黄色枠で表示する。
+            # キャリブレーション済みの場合は、
+            # ROIとは別に検出された基準CAP範囲を黄色枠で表示する。
             if detector.reference_cap is not None:
                 ref_x = int(detector.reference_cap["x"])
                 ref_top_y = int(detector.reference_cap["top_y"])
@@ -752,19 +805,36 @@ if __name__ == "__main__":
                 print("=== キャリブレーション ===")
                 result = detector.calibrate(frame.copy())
                 print(f"キャリブレーション結果: {result}")
+                if result:
+                    print(
+                        "基準CAP範囲: "
+                        f"{detector.get_reference_cap()}"
+                    )
 
             if key == ord("o"):
                 print("=== 開栓判定 ===")
+                result_frame = frame.copy()
+                is_open = detector.is_open(result_frame)
+                status = detector.get_status()
                 detector.mode = "open"
-                processed_frame, is_safe, reason = detector.process_frame(frame.copy())
-                print(f"OPEN: is_safe={is_safe}, reason={reason}")
+                processed_frame, _, _ = detector.process_frame(frame.copy())
+                print(
+                    f"is_open()={is_open}, "
+                    f"reason={status['reason']}"
+                )
                 cv2.imshow("Cap Inspector - Result", processed_frame)
 
             if key == ord("s"):
                 print("=== 閉栓判定 ===")
+                result_frame = frame.copy()
+                is_closed = detector.is_closed(result_frame)
+                status = detector.get_status()
                 detector.mode = "closed"
-                processed_frame, is_safe, reason = detector.process_frame(frame.copy())
-                print(f"CLOSED: is_safe={is_safe}, reason={reason}")
+                processed_frame, _, _ = detector.process_frame(frame.copy())
+                print(
+                    f"is_closed()={is_closed}, "
+                    f"reason={status['reason']}"
+                )
                 cv2.imshow("Cap Inspector - Result", processed_frame)
 
         detector.release()
