@@ -6,6 +6,7 @@ from PySide6.QtCore import QObject, QPoint, QRect, Qt, QThread, Signal
 from PySide6.QtGui import QImage, QMouseEvent, QPainter, QPen, QPixmap
 from PySide6.QtWidgets import (
     QApplication,
+    QFileDialog,
     QFormLayout,
     QHBoxLayout,
     QLabel,
@@ -141,14 +142,17 @@ class CapInspectorViewer(QMainWindow):
         close_callback: Optional[Callable[[], None]] = None,
         jpeg_quality: int = 85,
         interval_sec: float = 0.1,
+        parameter_file: str = "cap_inspector_parameters.json",
     ) -> None:
         super().__init__()
         self.inspector = inspector
         self.close_callback = close_callback
         self.jpeg_quality = jpeg_quality
         self.interval_sec = interval_sec
+        self.parameter_file = parameter_file
         self.inputs: Dict[str, QLineEdit] = {}
         self._closed = False
+        self.reference_cap: Optional[Dict[str, Any]] = None
 
         self.setWindowTitle("CapInspector")
         self.image_label = ImageLabel()
@@ -164,6 +168,8 @@ class CapInspectorViewer(QMainWindow):
             "threshold_val",
             "min_aspect_ratio",
             "smooth_frames",
+            "cap_actual_width_mm",
+            "position_limit_mm",
         ):
             value = params[key]
             if isinstance(value, (tuple, list)):
@@ -172,9 +178,41 @@ class CapInspectorViewer(QMainWindow):
             form_layout.addRow(key, line_edit)
             self.inputs[key] = line_edit
 
-        apply_button = QPushButton("Apply")
+        apply_button = QPushButton("Apply Parameters")
         apply_button.clicked.connect(self.apply_parameters)
         form_layout.addRow(apply_button)
+
+        self.parameter_file_input = QLineEdit(self.parameter_file)
+        form_layout.addRow("parameter_file", self.parameter_file_input)
+
+        file_buttons = QHBoxLayout()
+        save_button = QPushButton("Save")
+        save_button.clicked.connect(self.save_parameters)
+        load_button = QPushButton("Load")
+        load_button.clicked.connect(self.load_parameters)
+        browse_button = QPushButton("Browse")
+        browse_button.clicked.connect(self.select_parameter_file)
+        file_buttons.addWidget(save_button)
+        file_buttons.addWidget(load_button)
+        file_buttons.addWidget(browse_button)
+        form_layout.addRow(file_buttons)
+
+        calibrate_button = QPushButton("Calibrate Closed CAP")
+        calibrate_button.clicked.connect(self.calibrate)
+        form_layout.addRow(calibrate_button)
+
+        check_buttons = QHBoxLayout()
+        open_button = QPushButton("Check OPEN")
+        open_button.clicked.connect(self.check_open)
+        close_button = QPushButton("Check CLOSE")
+        close_button.clicked.connect(self.check_close)
+        check_buttons.addWidget(open_button)
+        check_buttons.addWidget(close_button)
+        form_layout.addRow(check_buttons)
+
+        self.calibration_label = QLabel("calibration: --")
+        self.calibration_label.setWordWrap(True)
+        form_layout.addRow(self.calibration_label)
 
         self.status_label = QLabel("is_safe: --")
         self.status_label.setWordWrap(True)
@@ -221,16 +259,156 @@ class CapInspectorViewer(QMainWindow):
             "threshold_val": int(self.inputs["threshold_val"].text()),
             "min_aspect_ratio": float(self.inputs["min_aspect_ratio"].text()),
             "smooth_frames": int(self.inputs["smooth_frames"].text()),
+            "cap_actual_width_mm": float(
+                self.inputs["cap_actual_width_mm"].text()
+            ),
+            "position_limit_mm": float(
+                self.inputs["position_limit_mm"].text()
+            ),
         }
 
-    def apply_parameters(self) -> None:
+    def apply_parameters(self) -> bool:
         try:
-            self.inspector.set_parameters(self._parse_parameters())
+            parameters = self.inspector.set_parameters(self._parse_parameters())
+            self._update_inputs(parameters)
+            self.status_label.setText("parameters applied")
+            return True
         except Exception as exc:
             QMessageBox.critical(self, "Parameter error", str(exc))
+            return False
+
+    def _update_inputs(self, parameters: Dict[str, Any]) -> None:
+        for key, value in parameters.items():
+            if key not in self.inputs:
+                continue
+            if isinstance(value, (tuple, list)):
+                text = ", ".join(str(item) for item in value)
+            else:
+                text = str(value)
+            self.inputs[key].setText(text)
+
+    def select_parameter_file(self) -> None:
+        filename, _ = QFileDialog.getSaveFileName(
+            self,
+            "Parameter file",
+            self.parameter_file_input.text(),
+            "JSON (*.json);;All files (*)",
+        )
+        if filename:
+            self.parameter_file_input.setText(filename)
+
+    def save_parameters(self) -> None:
+        try:
+            if not self.apply_parameters():
+                return
+            filename = self.parameter_file_input.text().strip()
+            if not filename:
+                raise ValueError("parameter file is empty")
+            parameters = self.inspector.save_parameters(filename)
+            self._update_inputs(parameters)
+            self.status_label.setText("parameters saved: " + filename)
+        except Exception as exc:
+            QMessageBox.critical(self, "Save error", str(exc))
+
+    def load_parameters(self) -> None:
+        try:
+            filename = self.parameter_file_input.text().strip()
+            if not filename:
+                raise ValueError("parameter file is empty")
+            parameters = self.inspector.load_parameters(filename)
+            self._update_inputs(parameters)
+            self.reference_cap = self.inspector.get_reference_cap()
+            self.calibration_label.setText(
+                "calibration: parameters loaded / confirm or recalibrate"
+            )
+            self.status_label.setText("parameters loaded: " + filename)
+        except Exception as exc:
+            QMessageBox.critical(self, "Load error", str(exc))
+
+    def calibrate(self) -> None:
+        try:
+            if not self.apply_parameters():
+                return
+            result = bool(self.inspector.calibrate())
+            self.reference_cap = self.inspector.get_reference_cap()
+            if result:
+                filename = self.parameter_file_input.text().strip()
+                if filename:
+                    self.inspector.save_parameters(filename)
+                self.calibration_label.setText(
+                    "calibration: OK / reference_cap="
+                    + str(self.reference_cap)
+                )
+            else:
+                self.calibration_label.setText("calibration: FAIL")
+        except Exception as exc:
+            QMessageBox.critical(self, "Calibration error", str(exc))
+
+    def check_open(self) -> None:
+        try:
+            # Stream表示もOPEN判定に合わせる。
+            self.inspector.set_parameters({"mode": "open"})
+            result = bool(self.inspector.is_open())
+            status = self.inspector.get_status()
+            self.reference_cap = self.inspector.get_reference_cap()
+            self.status_label.setText(
+                "OPEN: "
+                + str(result)
+                + " / "
+                + str(status.get("reason"))
+            )
+        except Exception as exc:
+            QMessageBox.critical(self, "OPEN check error", str(exc))
+
+    def check_close(self) -> None:
+        try:
+            # Stream表示もCLOSE判定に合わせる。
+            self.inspector.set_parameters({"mode": "closed"})
+            result = bool(self.inspector.is_closed())
+            status = self.inspector.get_status()
+            self.reference_cap = self.inspector.get_reference_cap()
+            self.status_label.setText(
+                "CLOSE: "
+                + str(result)
+                + " / "
+                + str(status.get("reason"))
+            )
+        except Exception as exc:
+            QMessageBox.critical(self, "CLOSE check error", str(exc))
 
     def _update_image(self, frame: np.ndarray, item: Dict[str, Any]) -> None:
         height, width, channels = frame.shape
+
+        try:
+            roi_x = [
+                float(value.strip())
+                for value in self.inputs["roi_x_range"].text().split(",")
+            ]
+            roi_y = [
+                float(value.strip())
+                for value in self.inputs["roi_y_range"].text().split(",")
+            ]
+            if len(roi_x) == 2 and len(roi_y) == 2:
+                x1 = int(roi_x[0] * width)
+                x2 = int(roi_x[1] * width)
+                y1 = int(roi_y[0] * height)
+                y2 = int(roi_y[1] * height)
+                cv2.rectangle(frame, (x1, y1), (x2, y2), (0, 0, 255), 2)
+        except (TypeError, ValueError):
+            pass
+
+        if self.reference_cap is not None:
+            ref_x = int(self.reference_cap["x"])
+            ref_top = int(self.reference_cap["top_y"])
+            ref_width = int(self.reference_cap["width"])
+            ref_bottom = int(self.reference_cap["bottom_y"])
+            cv2.rectangle(
+                frame,
+                (ref_x, ref_top),
+                (ref_x + ref_width, ref_bottom),
+                (255, 255, 0),
+                2,
+            )
         bytes_per_line = channels * width
         image = QImage(
             frame.data,
@@ -259,7 +437,11 @@ class CapInspectorViewer(QMainWindow):
     ) -> None:
         self.inputs["roi_x_range"].setText("{:.6f}, {:.6f}".format(left, right))
         self.inputs["roi_y_range"].setText("{:.6f}, {:.6f}".format(top, bottom))
-        self.apply_parameters()
+        if self.apply_parameters():
+            self.reference_cap = None
+            self.calibration_label.setText(
+                "calibration: ROI changed / recalibration required"
+            )
 
     def closeEvent(self, event: Any) -> None:
         if self._closed:
@@ -279,6 +461,7 @@ def run_viewer(
     close_callback: Optional[Callable[[], None]] = None,
     jpeg_quality: int = 85,
     interval_sec: float = 0.1,
+    parameter_file: str = "cap_inspector_parameters.json",
 ) -> int:
     """CapInspectorViewer を起動する。"""
     app = QApplication.instance()
@@ -292,6 +475,7 @@ def run_viewer(
         close_callback=close_callback,
         jpeg_quality=jpeg_quality,
         interval_sec=interval_sec,
+        parameter_file=parameter_file,
     )
     viewer.show()
 

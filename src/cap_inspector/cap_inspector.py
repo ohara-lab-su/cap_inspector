@@ -1,4 +1,5 @@
 from collections import deque
+import json
 import time
 
 import cv2
@@ -492,6 +493,19 @@ class CapInspector:
         self.logger.info(f"Parameters updated: {current}")
         return current
 
+    def save_parameters(self, filename):
+        """現在の認識パラメータをローカルファイルへ保存する。"""
+        parameters = self.get_parameters()
+        with open(filename, "w", encoding="utf-8") as file:
+            json.dump(parameters, file, ensure_ascii=False, indent=2)
+        return parameters
+
+    def load_parameters(self, filename):
+        """ローカルファイルから認識パラメータを読み込み、自身へ設定する。"""
+        with open(filename, "r", encoding="utf-8") as file:
+            parameters = json.load(file)
+        return self.set_parameters(parameters)
+
     def inspect(self):
         """現在の1フレームを判定し、判定状態を更新する。"""
         frame = self._read_frame()
@@ -504,11 +518,11 @@ class CapInspector:
         return self._is_safe
 
     def is_safe(self):
-        """直近の inspect() による判定結果を返す。未判定時は None。"""
+        """直近の判定結果を返す。未判定時は None。"""
         return self._is_safe
 
     def get_status(self):
-        """直近の inspect() による判定状態を返す。認識処理は実行しない。"""
+        """直近の判定状態を返す。認識処理は実行しない。"""
         return {"is_safe": self._is_safe, "reason": self._reason}
 
     def get_image(self, jpeg_quality=85):
