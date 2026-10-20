@@ -355,8 +355,8 @@ class CapInspector:
 if __name__ == "__main__":
     logger = XLogger()
     detector = CapInspector(
-        camera_id=0,
-        angle_limit=3.0,  # 許容角度（3度以上で停止）
+        camera_id=1,
+        angle_limit=3.5,  # 許容角度（3度以上で停止）
         min_aspect_ratio=1.5,  # アスペクト比1.9未満（高さ増加）で停止
         threshold_val=210,  # 瓶の光反射を消すための二値化閾値
         logger=logger,
