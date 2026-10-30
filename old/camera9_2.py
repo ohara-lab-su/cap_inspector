@@ -15,7 +15,7 @@ MM_TO_PIXEL = 4.0
 
 # 目標の高さ（ミリメートル）
 TARGET_CLOSE_MM = 0.5  # 閉まっているとき
-TARGET_OPEN_MM = 4.0  # 開いているとき
+TARGET_OPEN_MM = 3.5  # 開いているとき
 
 # 許容する誤差（ミリメートル）
 TOLERANCE_MM = 1.0
