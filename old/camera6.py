@@ -10,7 +10,7 @@ class CapInspector:
 
     def __init__(
         self,
-        camera_id=1,
+        camera_id=0,
         roi_x_range=(0.30, 0.70),  # ROI横幅 (30%〜70%)
         roi_y_range=(0.0, 0.35),  # ROI高さ (0%〜35%)
         angle_limit=3.0,  # 許容角度（度）
@@ -31,7 +31,10 @@ class CapInspector:
         self.threshold_val = threshold_val
         self._is_safe = None
         self._reason = None
-        self.logger = logger if logger is not None else XLogger(logger_name="cap_inspector")
+        self.logger = (
+            logger if logger is not None else XLogger(logger_name="cap_inspector")
+        )
+
         self.logger.info(
             f"CapInspector initialized: camera_id={self.camera_id}, "
             f"roi_x_range={self.roi_x_range}, roi_y_range={self.roi_y_range}, "
@@ -154,7 +157,10 @@ class CapInspector:
 
         # 限界角度オーバー判定
         if smoothed_angle >= self.angle_limit:
-            error_msg = f"STOP: Angle {smoothed_angle:.1f} deg >= {self.angle_limit} deg"
+            error_msg = (
+                f"STOP: Angle {smoothed_angle:.1f} deg >= {self.angle_limit} deg"
+            )
+
             self._draw_stop_message(frame, error_msg)
             return frame, False, error_msg
 
@@ -179,7 +185,6 @@ class CapInspector:
 
         return frame, True, None
 
-
     def get_parameters(self):
         """現在の認識パラメータを返す。"""
         return {
@@ -196,8 +201,13 @@ class CapInspector:
         """認識パラメータをまとめて更新する。既存キーのみ受け付ける。"""
         self.logger.info(f"Parameter update requested: {parameters}")
         allowed = {
-            "camera_id", "roi_x_range", "roi_y_range", "angle_limit",
-            "threshold_val", "min_aspect_ratio", "smooth_frames",
+            "camera_id",
+            "roi_x_range",
+            "roi_y_range",
+            "angle_limit",
+            "threshold_val",
+            "min_aspect_ratio",
+            "smooth_frames",
         }
         unknown = set(parameters) - allowed
         if unknown:
@@ -238,7 +248,6 @@ class CapInspector:
         """直近の inspect() による判定結果を返す。未判定時は None。"""
         return self._is_safe
 
-
     def get_status(self):
         """直近の inspect() による判定状態を返す。認識処理は実行しない。"""
         return {"is_safe": self._is_safe, "reason": self._reason}
@@ -248,7 +257,8 @@ class CapInspector:
         frame = self._read_frame()
         processed_frame, is_safe, reason = self.process_frame(frame)
         ok, encoded = cv2.imencode(
-            ".jpg", processed_frame,
+            ".jpg",
+            processed_frame,
             [int(cv2.IMWRITE_JPEG_QUALITY), int(jpeg_quality)],
         )
         if not ok:
@@ -345,9 +355,9 @@ class CapInspector:
 if __name__ == "__main__":
     logger = XLogger()
     detector = CapInspector(
-        camera_id=0,
-        angle_limit=3.0,  # 許容角度（3度以上で停止）
-        min_aspect_ratio=1.9,  # アスペクト比1.9未満（高さ増加）で停止
+        camera_id=1,
+        angle_limit=3.5,  # 許容角度（3度以上で停止）
+        min_aspect_ratio=1.5,  # アスペクト比1.9未満（高さ増加）で停止
         threshold_val=210,  # 瓶の光反射を消すための二値化閾値
         logger=logger,
     )
