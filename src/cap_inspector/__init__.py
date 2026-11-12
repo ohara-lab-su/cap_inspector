@@ -1,6 +1,8 @@
 """CapInspector public API."""
 
 from .cap_inspector import CapInspector
-from .client import CapInspectorClient
+
+# Server
+from .server_grpc.client import CapInspectorClient
 
 __all__ = ("CapInspector", "CapInspectorClient")

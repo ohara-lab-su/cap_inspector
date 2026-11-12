@@ -4,6 +4,7 @@ import cv2
 import numpy as np
 from x_logger import XLogger
 
+
 class CapDetector:
 
     def __init__(
@@ -58,7 +59,7 @@ class CapDetector:
 
         # 2. HSVによる白の抽出
         hsv_roi = cv2.cvtColor(roi, cv2.COLOR_BGR2HSV)
-        #lower_white = np.array([0, 0, 210])
+        # lower_white = np.array([0, 0, 210])
         lower_white = np.array([0, 0, self.threshold_val])
         upper_white = np.array([180, 30, 255])
         thresh = cv2.inRange(hsv_roi, lower_white, upper_white)
@@ -87,7 +88,9 @@ class CapDetector:
             if 1.5 <= aspect_ratio <= 4.0:
                 cnt_center_x = rx + (rw / 2.0)
                 dist_from_center = abs(cnt_center_x - roi_center_x)
-                if dist_from_center < (roi_w * 0.20): # ROI領域のX軸中央付近（20%以内）にある物体だけを判定対象として選定
+                if dist_from_center < (
+                    roi_w * 0.20
+                ):  # ROI領域のX軸中央付近（20%以内）にある物体だけを判定対象として選定
                     valid_caps.append((area, cnt, rx, ry, rw, rh))
 
         # 候補がない場合（キャップが映っていない状態）
@@ -209,7 +212,7 @@ if __name__ == "__main__":
         camera_id=1,
         angle_limit=3.0,  # 許容角度（3度以上で停止）
         min_aspect_ratio=1.9,  # アスペクト比1.9未満（高さ増加）で停止
-        threshold_val=210,  # 瓶の光反射を消すための二値化閾値
+        threshold_val=210,  # 瓶の光反射を消すための二値化閾値(210)
         logger=logger,
     )
 

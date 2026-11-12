@@ -12,7 +12,8 @@ dependencies = [
     "opencv-python",
     "Pillow",
     "grpc-frame",
-    "x-logger",
+    "xlogger-py",
+    "pyside6",
 ]
 
 [tool.setuptools.packages.find]
