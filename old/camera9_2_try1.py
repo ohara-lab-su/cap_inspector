@@ -1,4 +1,4 @@
-#完成版
+# 完成版
 import cv2
 import numpy as np
 from x_logger import XLogger
@@ -30,7 +30,6 @@ class CapInspector:
         else:
             self.logger = XLogger(logger_name="cap_inspector")
 
-
         self.logger.info(
             f"CapInspector initialized: camera_id={self.camera_id}, "
             f"BOTTLE_RIM_Y={self.BOTTLE_RIM_Y}, MM_TO_PIXEL={self.MM_TO_PIXEL}, "
@@ -41,16 +40,19 @@ class CapInspector:
     def __del__(self):
         """デストラクタでリソースを解放する。"""
         try:
-            self.cap.release()
-            cv2.destroyAllWindows()
+            self.release()
         except Exception:
             pass
+
+    def release(self):
+        self.cap.release()
+        cv2.destroyAllWindows()
 
     def set_camera_id(self, camera_id):
         self.camera_id = camera_id
 
     def set_bottle_rim_y(self, value):
-       self.BOTTLE_RIM_Y = value
+        self.BOTTLE_RIM_Y = value
 
     def set_mm_to_PIXEL(self, value):
         self.MM_TO_PIXEL = value
@@ -140,13 +142,13 @@ class CapInspector:
         """現在の1フレームを判定し、判定状態を更新する。"""
         frame = self._read_frame()
         result = self.process_frame(frame)
-        self._is_safe = bool(is_safe)
-        self._reason = reason
-        self.logger.debug(
-            f"Inspection completed: is_safe={self._is_safe}, reason={self._reason}"
-        )
-        return self._is_safe
-
+        # self._is_safe = bool(is_safe)
+        # self._reason = reason
+        # self.logger.debug(
+        #     f"Inspection completed: is_safe={self._is_safe}, reason={self._reason}"
+        # )
+        # return self._is_safe
+        return result
 
     def process_frame(
             self,
@@ -217,21 +219,23 @@ class CapInspector:
 
                 return self._result
 
-
     def run(self):
         """
         無限ループ系、動作テスト用
         Returns:
 
         """
+        current_mode = "closed"
+
         # カメラを初期化
         self.start_camera()
-        ret, frame = self.cap.read()
-        if not ret:
-            exit()
 
         while True:
-            self.process_frame(frame)
+            ret, frame = self.cap.read()
+            if not ret:
+                exit()
+
+            result = self.process_frame(frame, current_mode)
 
             # 範囲の確認のための仕組み（このメソッドでは使わない）
             # 画面に描画
@@ -278,5 +282,10 @@ class CapInspector:
                 current_mode = "opened"
                 print("-> 【開いているか】の判定モード (4.0mm) に切り替えました")
 
-        #self.cap.release()
-        #cv2.destroyAllWindows()
+        # self.cap.release()
+        # cv2.destroyAllWindows()
+
+
+if __name__ == '__main__':
+    cap = CapInspector()
+    cap.run()
