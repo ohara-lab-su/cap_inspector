@@ -1,57 +1,134 @@
 # cap_inspector
 
-[English](README.md) | [日本語](README.ja.md) | [ドキュメント](https://ohara-lab-su.github.io/cap_inspector/ja/index.html) | [GitHub](https://github.com/ohara-lab-su/cap_inspector)
+[English](README.md) | **日本語** | [GitHub](https://github.com/ohara-lab-su/cap_inspector)
 
-OpenCVを用いてボトルキャップの開閉状態を検査する画像認識パッケージです。主眼はキャップの色の変更ではなく、**認識アルゴリズムと判定基準の明確化による検査の安定性・再現性の向上**にあります。照明条件の変動による誤検出・検出失敗を抑えることを目的として、候補領域の抽出後に形状・傾き・底面位置を評価し、浮き量を数値的に判定します。赤色だけでなく黒色のキャップも対象とするプロジェクトです。ローカルカメラでの検査、JSONによる設定管理、gRPCによる遠隔操作・画像配信、GUIビューアーに対応します。
+**cap_inspector** は、カメラ画像からボトルキャップの開閉状態を検査するPythonパッケージです。OpenCVによる画像認識、ローカル検査、gRPCを介した遠隔検査・画像配信、GUIによる状態確認を提供します。
 
-## 画像認識と開閉判定
+本プロジェクトの中心は、キャップの色を変更することではなく、**検出候補の形状・傾き・位置を組み合わせ、開閉判定の幾何学的基準を明示することで、検査を安定させること**です。照明の変動による認識失敗を抑え、撮影条件と判定条件を管理しやすくします。赤色・黒色キャップを対象とする用途を想定していますが、現在の実装で確認できる色抽出処理は赤色用HSVマスクです。黒色用の検出処理が実装済みであるとは扱いません。
 
-現行の赤色キャップ向け検出設定では、以下の処理を使用します。色抽出条件は検出対象に依存し、黒色キャップに同じHSV閾値を適用するものではありません。照明変動に対する完全な不変性を保証するものではなく、撮影条件と検出設定の適合が必要です。
+## 主な機能
 
-1. カメラ画像をHSV色空間に変換し、赤色の2領域（H 0–10、170–180、S 120–255、V 70–255）を抽出してマスクを結合します。
-2. 5 × 5カーネルによるオープニング、クロージングの順にマスクを整形します。外部輪郭を抽出し、面積500 pixel²を超える輪郭を処理します。
-3. 各輪郭に最小面積回転矩形を当てはめ、傾きが3°未満、幅と高さの比が2.3–2.8であることを確認します。
-4. 回転矩形のY座標が大きい2頂点からキャップ底面を求め、瓶の基準線からの浮き量を計算します。
-
-   `lift_mm = (BOTTLE_RIM_Y - cap_bottom_y) / MM_TO_PIXEL`
-
-5. 浮き量を開栓・閉栓それぞれの目標値と比較します。初期値は閉栓0.5 mm、開栓3.5 mm、許容差はそれぞれ±1.0 mmです。
-
-基準線と画素・距離換算係数は撮影系の幾何条件に依存するため、設置環境に合わせて設定します。条件を満たす輪郭をすべて処理し、現在の代表状態には最後に処理した輪郭の結果を保持します。キャップを検出できなかったフレームは検査不合格です。
-
-`inspect(mode)` は1フレームの撮影・画像認識を行い、開栓・閉栓の両フラグを更新して、`"closed"` または `"opened"` の指定条件に対する判定結果を返します。`is_closed()` と `is_open()` は直近のフラグを返すだけで再撮影しません。取得できる状態は直近の検査時点のものであり、連続監視値ではありません。
+- **画像認識**：HSVマスク、モルフォロジー処理、輪郭抽出、回転矩形による形状・傾き判定。
+- **開閉検査**：キャップ底面と瓶の基準線との距離をmmに換算し、開栓・閉栓それぞれの許容範囲で評価。
+- **結果の再利用**：`inspect()` が1回の撮影と判定を実行し、`is_open()` / `is_closed()` はその結果を参照。問い合わせ時に再撮影しません。
+- **設定管理**：判定基準、画素換算、カメラ番号を実行中に変更し、JSONに保存・復元。
+- **遠隔操作**：`grpc-frame` による検査・パラメータ変更・JPEG画像ストリーム、PySide6ビューアー。
 
 ## インストール
+
+プロジェクトのルートで実行します。
 
 ```bash
 pip install .
 ```
 
-開発時は `pip install -e .` を利用できます。依存パッケージの配布名は `grpc-frame` と `xlogger-py` です（Pythonのimport名は `grpc_frame` と `x_logger`）。GUIにはPySide6を使用します。
+開発時は `pip install -e .` を利用できます。依存パッケージの配布名 `grpc-frame` / `xlogger-py` と、Pythonのimport名 `grpc_frame` / `x_logger` は異なります。
 
-## 基本的な使い方
+## クイックスタート：ローカル検査
 
 ```python
 from cap_inspector import CapInspector
 
-inspector = CapInspector(current_mode="closed")
+inspector = CapInspector(
+    camera_id=0,
+    BOTTLE_RIM_Y=275,
+    MM_TO_PIXEL=4.0,
+    current_mode="closed",
+)
 try:
     passed = inspector.inspect("closed")
-    print(passed, inspector.is_closed(), inspector.is_open())
+    print("Closed inspection:", passed)
+    print("Closed:", inspector.is_closed())
+    print("Opened:", inspector.is_open())
+    print("Status:", inspector.get_status())
+    print("Lift (mm):", inspector.get_lift_mm())
 finally:
     inspector.release()
 ```
 
-## gRPCとGUI
+`inspect("closed")` は閉栓条件で検査し、`inspect("opened")` は開栓条件で検査します。両者とも認識結果から開栓・閉栓フラグを更新します。`is_open()` と `is_closed()` は直近の検査結果を返すだけで、再判定は行いません。未検査・検出失敗と「条件を満たさない」は `get_status()` などを併せて確認してください。
 
-`python examples/server_example.py` でサーバーを起動し、クライアント側で `python examples/gui_client.py` を実行します。接続先は使用例のスクリプトで設定します。遠隔GUIを運用用ビューアーとし、ローカルビューアーと `run()` はテスト用です。判定やパラメータ設定の例は `examples/` にあります。
+## 画像認識アルゴリズム
 
-## ドキュメント
+現在の赤色キャップ用の処理は次のとおりです。
 
-- [APIリファレンス](https://ohara-lab-su.github.io/cap_inspector/ja/api_guide.html)
-- [使用例](https://ohara-lab-su.github.io/cap_inspector/ja/examples.html)
-- [自動生成Python API](https://ohara-lab-su.github.io/cap_inspector/ja/api/modules.html)
-- [変更履歴](CHANGELOG.ja.md)
+1. BGR画像をHSVに変換し、赤色の2つの色相範囲（H: 0–10、170–180、S: 120–255、V: 70–255）を結合します。
+2. 5×5カーネルでオープニングとクロージングを実施し、マスクの小さなノイズや欠損を処理します。
+3. 外部輪郭を抽出し、面積500 pixel²超の候補を評価します。
+4. `minAreaRect` から回転矩形を求め、水平からの傾き3°未満、横縦比2.3–2.8の条件で候補を選別します。
+5. 回転矩形の下側2頂点から底面位置を求め、瓶の基準線からの浮き量を算出します。
+
+```text
+lift_mm = (BOTTLE_RIM_Y - cap_bottom_y) / MM_TO_PIXEL
+```
+
+| 設定値 | 初期値 | 用途 |
+|---|---:|---|
+| `BOTTLE_RIM_Y` | 275 px | 瓶の基準線（画像Y座標） |
+| `MM_TO_PIXEL` | 4.0 px/mm | 画素から実距離への換算 |
+| `TARGET_CLOSE_MM` | 0.5 mm | 閉栓時の目標浮き量 |
+| `TARGET_OPEN_MM` | 3.5 mm | 開栓時の目標浮き量 |
+| `TOLERANCE_MM` | 1.0 mm | 各目標値に対する許容差 |
+
+閉栓・開栓とも、計算した浮き量がそれぞれの目標値の±許容差に入るかを評価します。これは単なる色領域の有無による判定ではありません。**照明条件の変化を完全に補償する方式ではない**ため、HSV閾値とカメラ設置・基準線の整合が必要です。現在の実装では複数候補を処理し、代表状態には最後の候補の結果を保持します。
+
+## 実行中のパラメータ変更
+
+```python
+inspector.set_parameters({
+    "BOTTLE_RIM_Y": 275,
+    "MM_TO_PIXEL": 4.0,
+    "TARGET_CLOSE_MM": 0.5,
+    "TARGET_OPEN_MM": 3.5,
+    "TOLERANCE_MM": 1.0,
+    "mode": "closed",
+})
+print(inspector.get_parameters())
+inspector.save_parameters("cap_inspector_parameters.json")
+inspector.load_parameters("cap_inspector_parameters.json")
+```
+
+カメラの位置・画角を変更した場合は `BOTTLE_RIM_Y` と `MM_TO_PIXEL` を再確認してください。モードの変更は検査条件の変更であり、状態取得メソッドによる再検査は発生しません。
+
+## gRPCサーバーと遠隔GUI
+
+サーバーとクライアントを別々の端末で起動します。接続先は各使用例の `HOST` / `PORT` を設定します。
+
+```bash
+python examples/server_example.py
+python examples/gui_client.py
+```
+
+Pythonクライアントからも操作できます。
+
+```python
+from cap_inspector import CapInspectorClient
+
+client = CapInspectorClient("127.0.0.1", 50051)
+try:
+    client.start_camera()
+    print(client.inspect("closed"))
+    print(client.get_status())
+finally:
+    client.stop_camera()
+    client.close()
+```
+
+`examples/client_example.py` は遠隔検査、`examples/parameter_client.py` はJSONによる設定の送受信、`examples/set_parameters_client.py` は個別setterと一括設定、`examples/gui_client.py` は遠隔GUIを示します。gRPCクライアントの `.pyi` 型スタブは配布側で生成・同梱するもので、利用者による生成は不要です。
+
+## API早見表
+
+| API | 内容 |
+|---|---|
+| `inspect(mode)` | 1フレームを撮影・認識し、指定モードの検査結果を返す |
+| `process_frame(frame, mode)` | 渡されたBGR画像を認識する |
+| `is_open()` / `is_closed()` | 直近の開栓・閉栓フラグを参照する |
+| `is_safe()` / `get_status()` | 直近の指定モードの結果・詳細状態を参照する |
+| `get_lift_mm()` / `get_detections()` | 浮き量・候補の情報を取得する |
+| `get_parameters()` / `set_parameters(...)` | 現在の設定を確認・変更する |
+| `save_parameters(path)` / `load_parameters(path)` | JSON設定を保存・復元する |
+| `get_image()` / `image_stream()` | JPEG画像・連続画像を取得する |
+| `start_camera()` / `stop_camera()` / `release()` | カメラのライフサイクルを管理する |
 
 ## ライセンス
 
