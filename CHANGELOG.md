@@ -6,6 +6,8 @@
 
 ### Changed
 
+- Refined the recognition pipeline around explicit geometric, tilt, bottom-edge, and lift criteria to improve inspection stability and reproducibility and reduce lighting-related recognition errors; the goal is not merely to detect a different cap color.
+
 - Replaced white-cap segmentation (low saturation and high value in HSV) with two-range red segmentation.
 - Replaced the upper-center ROI and largest-candidate selection with full-frame processing of all external contours above the area threshold.
 - Changed morphological processing from a 3 × 3 close–open sequence to a 5 × 5 open–close sequence.
