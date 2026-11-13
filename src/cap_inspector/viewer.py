@@ -2,8 +2,8 @@ from typing import Any, Callable, Dict, Optional, Tuple
 
 import cv2
 import numpy as np
-from PySide6.QtCore import QObject, QPoint, QRect, Qt, QThread, Signal
-from PySide6.QtGui import QImage, QMouseEvent, QPainter, QPen, QPixmap
+from PySide6.QtCore import QObject, Qt, QThread, Signal
+from PySide6.QtGui import QImage, QPixmap
 from PySide6.QtWidgets import (
     QApplication,
     QFileDialog,
@@ -20,81 +20,15 @@ from PySide6.QtWidgets import (
 
 
 class ImageLabel(QLabel):
-    roi_selected = Signal(float, float, float, float)
+    """認識済み画像をそのまま表示する。"""
 
     def __init__(self) -> None:
         super().__init__()
         self.setAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignTop)
-        self.setMouseTracking(True)
-        self._image_size: Optional[Tuple[int, int]] = None
-        self._roi_start: Optional[QPoint] = None
-        self._roi_end: Optional[QPoint] = None
 
     def set_frame(self, pixmap: QPixmap, width: int, height: int) -> None:
-        self._image_size = (width, height)
         self.setFixedSize(width, height)
         self.setPixmap(pixmap)
-
-    def mousePressEvent(self, event: QMouseEvent) -> None:
-        if event.button() != Qt.MouseButton.LeftButton:
-            return
-        if self._image_size is None:
-            return
-        point = self._clamp_point(event.position().toPoint())
-        self._roi_start = point
-        self._roi_end = point
-        self.update()
-
-    def mouseMoveEvent(self, event: QMouseEvent) -> None:
-        if self._roi_start is None:
-            return
-        self._roi_end = self._clamp_point(event.position().toPoint())
-        self.update()
-
-    def mouseReleaseEvent(self, event: QMouseEvent) -> None:
-        if event.button() != Qt.MouseButton.LeftButton:
-            return
-        if self._roi_start is None or self._image_size is None:
-            return
-
-        self._roi_end = self._clamp_point(event.position().toPoint())
-        start = self._roi_start
-        end = self._roi_end
-        self._roi_start = None
-        self._roi_end = None
-        self.update()
-
-        left = min(start.x(), end.x())
-        right = max(start.x(), end.x())
-        top = min(start.y(), end.y())
-        bottom = max(start.y(), end.y())
-        if right - left < 2 or bottom - top < 2:
-            return
-
-        width, height = self._image_size
-        self.roi_selected.emit(
-            left / float(width),
-            right / float(width),
-            top / float(height),
-            bottom / float(height),
-        )
-
-    def paintEvent(self, event: Any) -> None:
-        super().paintEvent(event)
-        if self._roi_start is None or self._roi_end is None:
-            return
-        painter = QPainter(self)
-        painter.setPen(QPen(Qt.GlobalColor.red, 2))
-        painter.drawRect(QRect(self._roi_start, self._roi_end).normalized())
-        painter.end()
-
-    def _clamp_point(self, point: QPoint) -> QPoint:
-        if self._image_size is None:
-            return QPoint(0, 0)
-        width, height = self._image_size
-        x = max(0, min(point.x(), width))
-        y = max(0, min(point.y(), height))
-        return QPoint(x, y)
 
 
 class StreamWorker(QObject):
@@ -155,26 +89,20 @@ class CapInspectorViewer(QMainWindow):
 
         self.inputs: Dict[str, QLineEdit] = {}
         self._closed = False
-        self.reference_cap: Optional[Dict[str, Any]] = None
 
         self.setWindowTitle("CapInspector")
         self.image_label = ImageLabel()
-        self.image_label.roi_selected.connect(self._roi_selected)
 
         params = self.inspector.get_parameters()
         form_layout = QFormLayout()
         for key in (
             "camera_id",
-            "roi_x_range",
-            "roi_y_range",
-            "angle_limit",
-            "threshold_val",
-            "min_aspect_ratio",
-            "smooth_frames",
-            "cap_actual_width_mm",
-            "close_position_limit_mm",
-            "open_position_mm",
-            "close_size_ratio_limit",
+            "BOTTLE_RIM_Y",
+            "MM_TO_PIXEL",
+            "TARGET_CLOSE_MM",
+            "TARGET_OPEN_MM",
+            "TOLERANCE_MM",
+            "mode",
         ):
             value = params[key]
             if isinstance(value, (tuple, list)):
@@ -202,10 +130,6 @@ class CapInspectorViewer(QMainWindow):
         file_buttons.addWidget(browse_button)
         form_layout.addRow(file_buttons)
 
-        calibrate_button = QPushButton("Calibrate Closed CAP")
-        calibrate_button.clicked.connect(self.calibrate)
-        form_layout.addRow(calibrate_button)
-
         check_buttons = QHBoxLayout()
         open_button = QPushButton("Check OPEN")
         open_button.clicked.connect(self.check_open)
@@ -214,10 +138,6 @@ class CapInspectorViewer(QMainWindow):
         check_buttons.addWidget(open_button)
         check_buttons.addWidget(close_button)
         form_layout.addRow(check_buttons)
-
-        self.calibration_label = QLabel("calibration: --")
-        self.calibration_label.setWordWrap(True)
-        form_layout.addRow(self.calibration_label)
 
         self.status_label = QLabel("is_safe: --")
         self.status_label.setWordWrap(True)
@@ -248,34 +168,14 @@ class CapInspectorViewer(QMainWindow):
         self.stream_thread.start()
 
     def _parse_parameters(self) -> Dict[str, Any]:
-        def pair(name: str) -> Tuple[float, float]:
-            values = [
-                float(value.strip()) for value in self.inputs[name].text().split(",")
-            ]
-            if len(values) != 2:
-                raise ValueError(name + " requires two values")
-            return values[0], values[1]
-
         return {
             "camera_id": int(self.inputs["camera_id"].text()),
-            "roi_x_range": pair("roi_x_range"),
-            "roi_y_range": pair("roi_y_range"),
-            "angle_limit": float(self.inputs["angle_limit"].text()),
-            "threshold_val": int(self.inputs["threshold_val"].text()),
-            "min_aspect_ratio": float(self.inputs["min_aspect_ratio"].text()),
-            "smooth_frames": int(self.inputs["smooth_frames"].text()),
-            "cap_actual_width_mm": float(
-                self.inputs["cap_actual_width_mm"].text()
-            ),
-            "close_position_limit_mm": float(
-                self.inputs["close_position_limit_mm"].text()
-            ),
-            "open_position_mm": float(
-                self.inputs["open_position_mm"].text()
-            ),
-            "close_size_ratio_limit": float(
-                self.inputs["close_size_ratio_limit"].text()
-            ),
+            "BOTTLE_RIM_Y": int(self.inputs["BOTTLE_RIM_Y"].text()),
+            "MM_TO_PIXEL": float(self.inputs["MM_TO_PIXEL"].text()),
+            "TARGET_CLOSE_MM": float(self.inputs["TARGET_CLOSE_MM"].text()),
+            "TARGET_OPEN_MM": float(self.inputs["TARGET_OPEN_MM"].text()),
+            "TOLERANCE_MM": float(self.inputs["TOLERANCE_MM"].text()),
+            "mode": self.inputs["mode"].text().strip(),
         }
 
     def apply_parameters(self) -> None:
@@ -306,7 +206,7 @@ class CapInspectorViewer(QMainWindow):
 
     def save_parameters(self) -> None:
         try:
-            self.apply_parameters()
+            self.inspector.set_parameters(self._parse_parameters())
             filename = self.parameter_file_input.text().strip()
             if not filename:
                 raise ValueError("parameter file is empty")
@@ -323,36 +223,17 @@ class CapInspectorViewer(QMainWindow):
                 raise ValueError("parameter file is empty")
             parameters = self.inspector.load_parameters(filename)
             self._update_inputs(parameters)
-            self.reference_cap = self.inspector.get_reference_cap()
             self.status_label.setText("parameters loaded: " + filename)
         except Exception as exc:
             QMessageBox.critical(self, "Load error", str(exc))
 
-    def calibrate(self) -> None:
-        try:
-            self.apply_parameters()
-            result = bool(self.inspector.calibrate())
-            self.reference_cap = self.inspector.get_reference_cap()
-            if result:
-                filename = self.parameter_file_input.text().strip()
-                if filename:
-                    self.inspector.save_parameters(filename)
-                self.calibration_label.setText(
-                    "calibration: OK / reference_cap="
-                    + str(self.reference_cap)
-                )
-            else:
-                self.calibration_label.setText("calibration: FAIL")
-        except Exception as exc:
-            QMessageBox.critical(self, "Calibration error", str(exc))
-
     def check_open(self) -> None:
         try:
             # Stream表示もOPEN判定に合わせる。
-            self.inspector.set_parameters({"mode": "open"})
+            self.inspector.set_parameters({"mode": "opened"})
+            self.inputs["mode"].setText("opened")
             result = bool(self.inspector.is_open())
             status = self.inspector.get_status()
-            self.reference_cap = self.inspector.get_reference_cap()
             self.status_label.setText(
                 "OPEN: "
                 + str(result)
@@ -366,9 +247,9 @@ class CapInspectorViewer(QMainWindow):
         try:
             # Stream表示もCLOSE判定に合わせる。
             self.inspector.set_parameters({"mode": "closed"})
+            self.inputs["mode"].setText("closed")
             result = bool(self.inspector.is_closed())
             status = self.inspector.get_status()
-            self.reference_cap = self.inspector.get_reference_cap()
             self.status_label.setText(
                 "CLOSE: "
                 + str(result)
@@ -381,36 +262,6 @@ class CapInspectorViewer(QMainWindow):
     def _update_image(self, frame: np.ndarray, item: Dict[str, Any]) -> None:
         height, width, channels = frame.shape
 
-        try:
-            roi_x = [
-                float(value.strip())
-                for value in self.inputs["roi_x_range"].text().split(",")
-            ]
-            roi_y = [
-                float(value.strip())
-                for value in self.inputs["roi_y_range"].text().split(",")
-            ]
-            if len(roi_x) == 2 and len(roi_y) == 2:
-                x1 = int(roi_x[0] * width)
-                x2 = int(roi_x[1] * width)
-                y1 = int(roi_y[0] * height)
-                y2 = int(roi_y[1] * height)
-                cv2.rectangle(frame, (x1, y1), (x2, y2), (0, 0, 255), 2)
-        except (TypeError, ValueError):
-            pass
-
-        if self.reference_cap is not None:
-            ref_x = int(self.reference_cap["x"])
-            ref_top = int(self.reference_cap["top_y"])
-            ref_width = int(self.reference_cap["width"])
-            ref_bottom = int(self.reference_cap["bottom_y"])
-            cv2.rectangle(
-                frame,
-                (ref_x, ref_top),
-                (ref_x + ref_width, ref_bottom),
-                (255, 255, 0),
-                2,
-            )
         bytes_per_line = channels * width
         image = QImage(
             frame.data,
@@ -429,17 +280,6 @@ class CapInspectorViewer(QMainWindow):
 
     def _stream_error(self, message: str) -> None:
         self.status_label.setText("stream error: " + message)
-
-    def _roi_selected(
-        self,
-        left: float,
-        right: float,
-        top: float,
-        bottom: float,
-    ) -> None:
-        self.inputs["roi_x_range"].setText("{:.6f}, {:.6f}".format(left, right))
-        self.inputs["roi_y_range"].setText("{:.6f}, {:.6f}".format(top, bottom))
-        self.apply_parameters()
 
     def closeEvent(self, event: Any) -> None:
         if self._closed:
