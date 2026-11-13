@@ -1,29 +1,31 @@
 # cap_inspector
 
-[![English](https://img.shields.io/badge/lang-en-blue)](README.md) [![日本語](https://img.shields.io/badge/lang-ja-blue)](README.ja.md) [![GitHub](https://img.shields.io/badge/GitHub-repository-black)](https://github.com/ohara-lab-su/cap_inspector) [![GitHub Pages](https://img.shields.io/badge/GitHub-Pages-blue)](https://ohara-lab-su.github.io/cap_inspector/) [![Ohara Lab](https://img.shields.io/badge/Ohara-Lab-green)](https://ohara-lab-su.github.io/)
+[English](README.md) | [日本語](README.ja.md) | [ドキュメント](https://ohara-lab-su.github.io/cap_inspector/ja/index.html) | [GitHub](https://github.com/ohara-lab-su/cap_inspector)
 
-OpenCVを用いて瓶の赤色キャップを検出し、キャップの位置と傾きから開栓・閉栓状態を判定するPythonパッケージです。ローカルカメラでの検査に加え、`grpc_frame` を利用した遠隔操作と画像配信に対応します。
+OpenCVによる赤色ボトルキャップの画像認識パッケージです。キャップの形状と鉛直方向の浮き量から、開栓・閉栓それぞれの判定条件を満たすか検査します。ローカルカメラでの検査、JSONによる設定管理、gRPCを用いた遠隔操作・画像配信、GUIビューアーに対応します。
 
-[English README](README.md) | [日本語ドキュメント](https://ohara-lab-su.github.io/cap_inspector/ja/index.html) | [変更履歴](CHANGELOG.ja.md)
+## 画像認識と開閉判定
 
-## 主な機能
+1. カメラ画像をHSV色空間に変換し、赤色の2領域（H 0–10、170–180、S 120–255、V 70–255）を抽出してマスクを結合します。
+2. 5 × 5カーネルによるオープニング、クロージングの順にマスクを整形します。外部輪郭を抽出し、面積500 pixel²を超える輪郭を処理します。
+3. 各輪郭に最小面積回転矩形を当てはめ、傾きが3°未満、幅と高さの比が2.3–2.8であることを確認します。
+4. 回転矩形のY座標が大きい2頂点からキャップ底面を求め、瓶の基準線からの浮き量を計算します。
 
-- HSV色空間の2つの赤色領域を利用したキャップ検出。
-- 輪郭の回転矩形による傾斜・縦横比・底面位置の評価。
-- 瓶の基準線からのキャップ浮き量に基づく開栓・閉栓判定。
-- `inspect(mode)` による検査実行と、`is_open()`・`is_closed()` による直近の結果の取得。
-- パラメータの変更、JSON形式での保存・読込。
-- gRPCによる遠隔検査、画像取得・ストリーミング、GUIビューアー。
+   `lift_mm = (BOTTLE_RIM_Y - cap_bottom_y) / MM_TO_PIXEL`
+
+5. 浮き量を開栓・閉栓それぞれの目標値と比較します。初期値は閉栓0.5 mm、開栓3.5 mm、許容差はそれぞれ±1.0 mmです。
+
+基準線と画素・距離換算係数は撮影系の幾何条件に依存するため、設置環境に合わせて設定します。条件を満たす輪郭をすべて処理し、現在の代表状態には最後に処理した輪郭の結果を保持します。キャップを検出できなかったフレームは検査不合格です。
+
+`inspect(mode)` は1フレームの撮影・画像認識を行い、開栓・閉栓の両フラグを更新して、`"closed"` または `"opened"` の指定条件に対する判定結果を返します。`is_closed()` と `is_open()` は直近のフラグを返すだけで再撮影しません。取得できる状態は直近の検査時点のものであり、連続監視値ではありません。
 
 ## インストール
-
-プロジェクトのルートディレクトリで実行します。
 
 ```bash
 pip install .
 ```
 
-開発時は `pip install -e .` も使用できます。依存パッケージの配布名は `grpc-frame`、`xlogger-py` です（Pythonでのimport名は `grpc_frame`、`x_logger`）。GUIにはPySide6を使用します。
+開発時は `pip install -e .` を利用できます。依存パッケージの配布名は `grpc-frame` と `xlogger-py` です（Pythonのimport名は `grpc_frame` と `x_logger`）。GUIにはPySide6を使用します。
 
 ## 基本的な使い方
 
@@ -32,46 +34,21 @@ from cap_inspector import CapInspector
 
 inspector = CapInspector(current_mode="closed")
 try:
-    result = inspector.inspect("closed")
-    print(result)
-    print(inspector.is_closed())
-    print(inspector.is_open())
+    passed = inspector.inspect("closed")
+    print(passed, inspector.is_closed(), inspector.is_open())
 finally:
     inspector.release()
 ```
 
-`inspect("closed")` は閉栓条件、`inspect("opened")` は開栓条件を検査します。どちらの場合も同じフレームから両方の状態を評価します。`is_open()` と `is_closed()` は最後の検査結果を返すだけで、新たな撮影や画像認識は行いません。
+## gRPCとGUI
 
-## gRPCサーバーとGUI
-
-サーバーを起動します。
-
-```bash
-python examples/server_example.py
-```
-
-別の端末からGUIクライアントを起動します。
-
-```bash
-python examples/gui_client.py
-```
-
-接続先のホストとポートは、各サンプルスクリプトの設定に合わせてください。パラメータ設定やクライアント操作の例は `examples/` を参照してください。
-
-## 判定方式
-
-v0.1.0では赤色キャップを画像全体から抽出し、回転矩形の底面と瓶の基準線との距離を用いて判定します。開栓・閉栓の目標浮き量と許容差は個別に設定できます。撮影位置や倍率に応じて `BOTTLE_RIM_Y` と `MM_TO_PIXEL` を設定してください。
-
-旧版v0.0.0は白色キャップをROI内で検出し、校正済みの閉栓キャップとの相対差を判定する方式でした。**両バージョンでは検出対象と判定アルゴリズムが異なります。** 詳細な比較は[技術ドキュメント](https://ohara-lab-su.github.io/cap_inspector/ja/index.html)を、バージョンごとの変更は[CHANGELOG](CHANGELOG.ja.md)を参照してください。
+`python examples/server_example.py` でサーバーを起動し、クライアント側で `python examples/gui_client.py` を実行します。接続先は使用例のスクリプトで設定します。遠隔GUIを運用用ビューアーとし、ローカルビューアーと `run()` はテスト用です。判定やパラメータ設定の例は `examples/` にあります。
 
 ## ドキュメント
 
-- [日本語ドキュメント](https://ohara-lab-su.github.io/cap_inspector/ja/index.html)
 - [APIリファレンス](https://ohara-lab-su.github.io/cap_inspector/ja/api.html)
 - [使用例](https://ohara-lab-su.github.io/cap_inspector/ja/examples.html)
 - [変更履歴](CHANGELOG.ja.md)
-
-型スタブ `client.pyi` はパッケージの開発・配布担当者が生成して配布物に含めるものです。利用者が生成する必要はありません。
 
 ## ライセンス
 
