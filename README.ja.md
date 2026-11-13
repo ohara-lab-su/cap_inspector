@@ -48,8 +48,9 @@ finally:
 
 ## ドキュメント
 
-- [APIリファレンス](https://ohara-lab-su.github.io/cap_inspector/ja/api.html)
+- [APIリファレンス](https://ohara-lab-su.github.io/cap_inspector/ja/api_guide.html)
 - [使用例](https://ohara-lab-su.github.io/cap_inspector/ja/examples.html)
+- [自動生成Python API](https://ohara-lab-su.github.io/cap_inspector/ja/api/modules.html)
 - [変更履歴](CHANGELOG.ja.md)
 
 ## ライセンス

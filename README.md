@@ -48,8 +48,9 @@ Run `python examples/server_example.py` to start the server, then `python exampl
 
 ## Documentation
 
-- [API reference](https://ohara-lab-su.github.io/cap_inspector/en/api.html)
+- [API reference](https://ohara-lab-su.github.io/cap_inspector/en/api_guide.html)
 - [Examples](https://ohara-lab-su.github.io/cap_inspector/en/examples.html)
+- [Generated Python API](https://ohara-lab-su.github.io/cap_inspector/en/api/modules.html)
 - [Changelog](CHANGELOG.md)
 
 ## License
