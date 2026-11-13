@@ -1,9 +1,9 @@
 # APIと設定
 
-`CapInspector.inspect(mode)` は1フレームを撮影・認識し、指定された `"closed"` または `"opened"` の条件を満たすか返します。同じ検査で開栓・閉栓の両フラグを更新します。`is_open()`、`is_closed()`、`is_safe()`、`get_status()` は直近の状態を参照し、再認識しません。
+`CapInspector.inspect(mode)` がフレーム取得と画像認識を実行し、直近の状態を更新して指定モードの真偽値を返します。`is_open()`、`is_closed()`、`is_safe()`、`get_status()` は保持済みの状態を参照し、再認識しません。
 
-`get_image()` と `image_stream()` は画像取得・配信を担当します。gRPCメソッドの公開には `grpc_frame` を使用します。
+`get_image()` と `image_stream()` は画像を提供します。gRPC公開は `grpc_frame` が担当し、個別のgRPCサービス実装は不要です。
 
-設定の取得・変更には `get_parameters()` と `set_parameters()`、または個別setterの `set_camera_id()`、`set_bottle_rim_y()`、`set_mm_to_PIXEL()`、`set_target_close_mm()`、`set_target_open_mm()`、`set_tolerance_mm()`、`set_mode()` を使用します。JSON形式の設定保存・読込には `save_parameters()` と `load_parameters()` を使用します。
+設定取得は `get_parameters()`、一括変更は `set_parameters()`、個別変更は `set_camera_id`、`set_bottle_rim_y`、`set_mm_to_PIXEL`、`set_target_close_mm`、`set_target_open_mm`、`set_tolerance_mm`、`set_mode` を使用します。コンストラクタ引数は初期値です。JSON保存・読込には `save_parameters()` と `load_parameters()` を使用します。
 
-gRPCクライアントの型スタブ（`client.pyi`）はパッケージ開発・配布担当者が `server_grpc/make_pyi.py` を使用して生成し、配布物に同梱します。利用者が生成する必要はありません。
+`server_grpc/make_pyi.py` は明示実行時に `grpc_frame.make_pyi` を呼び出して型スタブを生成します。生成済み `.pyi` は配布しません。

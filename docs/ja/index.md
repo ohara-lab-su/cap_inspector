@@ -1,6 +1,6 @@
 # cap_inspector
 
-[English](https://ohara-lab-su.github.io/cap_inspector/en/index.html) | [日本語](https://ohara-lab-su.github.io/cap_inspector/ja/index.html) | [GitHub](https://github.com/ohara-lab-su/cap_inspector)
+[![English](https://img.shields.io/badge/lang-en-blue)](https://ohara-lab-su.github.io/cap_inspector/en/index.html) [![日本語](https://img.shields.io/badge/lang-ja-blue)](https://ohara-lab-su.github.io/cap_inspector/ja/index.html) [![GitHub](https://img.shields.io/badge/GitHub-repository-black)](https://github.com/ohara-lab-su/cap_inspector) [![GitHub Pages](https://img.shields.io/badge/GitHub-Pages-blue)](https://ohara-lab-su.github.io/cap_inspector/) [![Ohara Lab](https://img.shields.io/badge/Ohara-Lab-green)](https://ohara-lab-su.github.io/)
 
 OpenCVを用いてボトルキャップの開閉状態を検査する画像認識パッケージです。主眼はキャップの色の変更ではなく、**認識アルゴリズムと判定基準の明確化による検査の安定性・再現性の向上**にあります。照明条件の変動による誤検出・検出失敗を抑えることを目的として、候補領域の抽出後に形状・傾き・底面位置を評価し、浮き量を数値的に判定します。赤色だけでなく黒色のキャップも対象とするプロジェクトです。ローカルカメラでの検査、JSONによる設定管理、gRPCによる遠隔操作・画像配信、GUIビューアーに対応します。
 
@@ -27,5 +27,13 @@ OpenCVを用いてボトルキャップの開閉状態を検査する画像認�
 
 ## 関連情報
 
-- [API](api.md)
-- [使用例](examples.md)
+- [API](https://ohara-lab-su.github.io/cap_inspector/ja/api.html)
+- [使用例](https://ohara-lab-su.github.io/cap_inspector/ja/examples.html)
+
+```{toctree}
+:maxdepth: 2
+:caption: Contents
+
+api
+examples
+```
