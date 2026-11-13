@@ -10,6 +10,17 @@ from x_logger import XLogger
 
 
 class CapInspector:
+    """赤色キャップの検出・開閉判定を行うクラス。
+
+    Attributes:
+        current_mode (str): inspect() の既定判定モード。
+        camera_id (int): 画像取得に使用するカメラ番号。
+
+    Notes:
+        コンストラクタ引数は初期値であり、個別setterで変更できる。
+        is_open() と is_closed() は直近の判定結果だけを返す。
+    """
+
     def __init__(
         self,
         camera_id=0,
@@ -28,7 +39,9 @@ class CapInspector:
         self.TARGET_OPEN_MM = TARGET_OPEN_MM
         self.TOLERANCE_MM = TOLERANCE_MM
         self.current_mode = self._normalize_mode(current_mode)
-        self.logger = logger if logger is not None else XLogger(logger_name="cap_inspector")
+        if logger is None:
+            logger = XLogger(logger_name="cap_inspector")
+        self.logger = logger
         self.cap = None
         self._reset_detection()
         self._is_safe = None
@@ -61,6 +74,8 @@ class CapInspector:
         self._aspect_ratio = None
         self._is_tilt_ok = None
         self._result = False
+        self._is_open = False
+        self._is_closed = False
         self._mode_str = None
         self._detections = []
 
@@ -115,20 +130,30 @@ class CapInspector:
         return contours
 
     def process_frame(self, frame, current_mode=None):
-        """1フレームを判定する。戻り値は bool。"""
-        mode = self._normalize_mode(
-            self.current_mode if current_mode is None else current_mode
-        )
+        """指定したフレームから開栓・閉栓の両条件を判定する。
+
+        Args:
+            frame: OpenCV BGR画像。
+            current_mode: 返却する判定結果のモード。省略時は現在の設定。
+
+        Returns:
+            bool: 指定モードの条件を満たした場合は True。
+
+        Notes:
+            開栓・閉栓の判定フラグは同じフレームから同時に更新する。
+        """
+        mode = self.current_mode
+        if current_mode is not None:
+            mode = self._normalize_mode(current_mode)
         self._reset_detection()
         self._is_safe = False
         self._reason = "FAIL: Cap not detected"
         self._last_frame = frame.copy()
         self._last_processed_frame = None
-        self._mode_str = (
-            f"Closed ({self.TARGET_CLOSE_MM:g}mm)"
-            if mode == "closed"
-            else f"Opened ({self.TARGET_OPEN_MM:g}mm)"
-        )
+        if mode == "closed":
+            self._mode_str = f"Closed ({self.TARGET_CLOSE_MM:g}mm)"
+        else:
+            self._mode_str = f"Opened ({self.TARGET_OPEN_MM:g}mm)"
         for cnt in self._detect_cap(frame):
             if cv2.contourArea(cnt) <= 500:
                 continue
@@ -140,13 +165,28 @@ class CapInspector:
                 angle += 90
                 w, h = h, w
             tilt_angle = abs(angle)
-            aspect_ratio = w / h if h > 0 else 0
-            is_tilt_ok = (tilt_angle < 3.0) and (2.3 <= aspect_ratio <= 2.8)
+            if h > 0:
+                aspect_ratio = w / h
+            else:
+                aspect_ratio = 0
+            is_tilt_ok = tilt_angle < 3.0
+            if aspect_ratio < 2.3 or aspect_ratio > 2.8:
+                is_tilt_ok = False
             bottom_points = sorted(box, key=lambda p: p[1], reverse=True)[:2]
             cap_bottom_y = (bottom_points[0][1] + bottom_points[1][1]) / 2
             lift_mm = (self.BOTTLE_RIM_Y - cap_bottom_y) / self.MM_TO_PIXEL
-            target = self.TARGET_CLOSE_MM if mode == "closed" else self.TARGET_OPEN_MM
-            result = bool(is_tilt_ok and abs(lift_mm - target) <= self.TOLERANCE_MM)
+            closed_result = bool(
+                is_tilt_ok
+                and abs(lift_mm - self.TARGET_CLOSE_MM) <= self.TOLERANCE_MM
+            )
+            open_result = bool(
+                is_tilt_ok
+                and abs(lift_mm - self.TARGET_OPEN_MM) <= self.TOLERANCE_MM
+            )
+            if mode == "closed":
+                result = closed_result
+            else:
+                result = open_result
             detection = {
                 "box": box.tolist(),
                 "bottom_points": [point.tolist() for point in bottom_points],
@@ -155,6 +195,8 @@ class CapInspector:
                 "aspect_ratio": float(aspect_ratio),
                 "is_tilt_ok": bool(is_tilt_ok),
                 "result": result,
+                "is_open": open_result,
+                "is_closed": closed_result,
             }
             self._detections.append(detection)
             # camera9_2 と同様に全輪郭を処理し、最後の有効輪郭を代表値とする。
@@ -165,6 +207,8 @@ class CapInspector:
             self._aspect_ratio = float(aspect_ratio)
             self._is_tilt_ok = bool(is_tilt_ok)
             self._result = result
+            self._is_open = open_result
+            self._is_closed = closed_result
             self._is_safe = result
             if not is_tilt_ok:
                 self._reason = "FAIL: Cap tilt or aspect ratio"
@@ -175,39 +219,72 @@ class CapInspector:
         return bool(self._result)
 
     def inspect(self, current_mode=None):
-        """カメラの1フレームを判定し、boolを返す。指定モードは保持する。"""
+        """カメラから1フレーム取得して検査する。
+
+        Args:
+            current_mode: ``closed`` または ``opened``。省略時は
+                インスタンスの現在のモードを使用する。指定時は設定も更新する。
+
+        Returns:
+            bool: 指定モードの検査に合格した場合は True。
+        """
         if current_mode is not None:
             self.current_mode = self._normalize_mode(current_mode)
         return self.process_frame(self._read_frame())
 
-    def is_open(self, frame=None):
-        return self.process_frame(
-            self._read_frame() if frame is None else frame, "opened"
-        )
+    def is_open(self) -> bool:
+        """直近の検査で開栓条件を満たしたか返す。
 
-    def is_closed(self, frame=None):
-        return self.process_frame(
-            self._read_frame() if frame is None else frame, "closed"
-        )
+        Returns:
+            bool: 最後のフレームで開栓条件を満たした場合は True。
+                未検査または検出失敗時は False。
+
+        Notes:
+            画像の取得や再判定は行わない。inspect() または
+            process_frame() で更新された状態を参照する。
+        """
+        return self._is_open
+
+    def is_closed(self) -> bool:
+        """直近の検査で閉栓条件を満たしたか返す。
+
+        Returns:
+            bool: 最後のフレームで閉栓条件を満たした場合は True。
+                未検査または検出失敗時は False。
+        """
+        return self._is_closed
 
     def is_safe(self):
+        """直近の指定モードの検査結果を返す。画像取得は行わない。"""
         return self._is_safe
 
     def get_status(self):
-        return {"is_safe": self._is_safe, "reason": self._reason}
+        """直近の検査状態を取得する。再検査は行わない。"""
+        return {
+            "is_safe": self._is_safe,
+            "reason": self._reason,
+            "is_open": self._is_open,
+            "is_closed": self._is_closed,
+        }
 
     def get_detection(self):
         """直近の代表検出結果をJSON互換の辞書で返す。"""
-        return self._detections[-1].copy() if self._detections else None
+        if not self._detections:
+            return None
+        return self._detections[-1].copy()
 
     def get_detections(self):
         return [item.copy() for item in self._detections]
 
     def get_bottom_points(self):
-        return None if self._bottom_points is None else self._bottom_points.tolist()
+        if self._bottom_points is None:
+            return None
+        return self._bottom_points.tolist()
 
     def get_box_shape(self):
-        return None if self._box is None else self._box.tolist()
+        if self._box is None:
+            return None
+        return self._box.tolist()
 
     def get_lift_mm(self):
         return self._lift_mm
@@ -269,7 +346,18 @@ class CapInspector:
         return frame
 
     def get_image(self, jpeg_quality=85):
-        """既存IF互換: 描画済みJPEG、判定結果、理由を返す。"""
+        """最新フレームを取得し、判定結果を描画したJPEGを返す。
+
+        Args:
+            jpeg_quality: JPEG品質（0～100）。
+
+        Returns:
+            dict: ``image``（JPEGバイト列）、``is_safe``、``reason``。
+
+        Notes:
+            画像ストリーミングも検査状態を更新する。GUIと制御スクリプトで
+            同じインスタンスを共有する場合は、状態更新の競合に注意する。
+        """
         frame = self._read_frame()
         self.process_frame(frame)
         processed = self._draw_detections(frame.copy())
@@ -314,10 +402,23 @@ class CapInspector:
             raise ValueError("TOLERANCE_MM must be nonnegative")
 
     def set_parameters(self, parameters):
-        """パラメータを一括更新する。未知のキーは拒否する。"""
+        """画像認識パラメータを一括更新する。
+
+        Args:
+            parameters (dict): 更新対象のパラメータ辞書。指定しない値は維持する。
+
+        Returns:
+            dict: 更新後の全パラメータ。
+
+        Raises:
+            ValueError: 未知のキー、または不正な設定値を受け取った場合。
+        """
         aliases = {"current_mode": "mode"}
         allowed = set(self.get_parameters())
-        normalized = {aliases.get(key, key): value for key, value in parameters.items()}
+        normalized = {}
+        for key, value in parameters.items():
+            normalized_key = aliases.get(key, key)
+            normalized[normalized_key] = value
         unknown = set(normalized) - allowed
         if unknown:
             raise ValueError(f"unknown parameters: {sorted(unknown)}")
@@ -333,7 +434,10 @@ class CapInspector:
         if camera_changed:
             self.stop_camera()
         for key, value in new.items():
-            setattr(self, "current_mode" if key == "mode" else key, value)
+            if key == "mode":
+                self.current_mode = value
+            else:
+                setattr(self, key, value)
         return self.get_parameters()
 
     def save_parameters(self, filename):
@@ -353,8 +457,8 @@ class CapInspector:
         if not self.start_camera():
             raise RuntimeError(f"camera open failed: camera_id={self.camera_id}")
         print("=== 操作方法 ===")
-        print("'c' キー: 閉まっているかの判定モードに切替")
-        print("'o' キー: 開いているかの判定モードに切替")
+        print("'c' キー: 閉まっているかの判定モード (0.5mm) に切替")
+        print("'o' キー: 開いているかの判定モード (4.0mm) に切替")
         print("'q' キー: 終了")
         try:
             while True:
@@ -369,10 +473,10 @@ class CapInspector:
                     break
                 if key == ord("c"):
                     current_mode = "closed"
-                    print("-> 【閉まっているか】の判定モードに切り替えました")
+                    print("-> 【閉まっているか】の判定モード (0.5mm) に切り替えました")
                 elif key == ord("o"):
                     current_mode = "opened"
-                    print("-> 【開いているか】の判定モードに切り替えました")
+                    print("-> 【開いているか】の判定モード (4.0mm) に切り替えました")
         finally:
             self.stop_camera()
             cv2.destroyAllWindows()

@@ -13,9 +13,9 @@ if __name__ == "__main__":
         # 基準線とmm換算係数は事前に設定した値を使用する。
         # 必要ならset_parameters()またはload_parameters()で変更する。
         camera.set_parameters({"mode": "opened"})
-        print("OPEN:", camera.inspect(), camera.get_status())
+        print("OPEN:", camera.inspect(), camera.is_open(), camera.get_status())
         camera.set_parameters({"mode": "closed"})
-        print("CLOSE:", camera.inspect(), camera.get_status())
+        print("CLOSE:", camera.inspect(), camera.is_closed(), camera.get_status())
     finally:
         camera.stop_camera()
         camera.close()

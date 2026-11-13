@@ -229,33 +229,21 @@ class CapInspectorViewer(QMainWindow):
 
     def check_open(self) -> None:
         try:
-            # Stream表示もOPEN判定に合わせる。
-            self.inspector.set_parameters({"mode": "opened"})
-            self.inputs["mode"].setText("opened")
-            result = bool(self.inspector.is_open())
-            status = self.inspector.get_status()
-            self.status_label.setText(
-                "OPEN: "
-                + str(result)
-                + " / "
-                + str(status.get("reason"))
-            )
+            result = bool(self.inspector.inspect("opened"))
+            state = bool(self.inspector.is_open())
+            if result != state:
+                raise RuntimeError("開栓判定結果と保持状態が一致しません")
+            self.status_label.setText("OPEN: " + str(result))
         except Exception as exc:
             QMessageBox.critical(self, "OPEN check error", str(exc))
 
     def check_close(self) -> None:
         try:
-            # Stream表示もCLOSE判定に合わせる。
-            self.inspector.set_parameters({"mode": "closed"})
-            self.inputs["mode"].setText("closed")
-            result = bool(self.inspector.is_closed())
-            status = self.inspector.get_status()
-            self.status_label.setText(
-                "CLOSE: "
-                + str(result)
-                + " / "
-                + str(status.get("reason"))
-            )
+            result = bool(self.inspector.inspect("closed"))
+            state = bool(self.inspector.is_closed())
+            if result != state:
+                raise RuntimeError("閉栓判定結果と保持状態が一致しません")
+            self.status_label.setText("CLOSE: " + str(result))
         except Exception as exc:
             QMessageBox.critical(self, "CLOSE check error", str(exc))
 

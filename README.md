@@ -1,105 +1,52 @@
 # cap_inspector
 
-キャップの画像認識と開閉状態の判定を行うPythonパッケージです。OpenCVによる画像処理を使用し、ローカルでの動作確認と、`grpc_frame` を介した遠隔操作に対応します。
+[![English](https://img.shields.io/badge/lang-en-blue)](README.md) [![日本語](https://img.shields.io/badge/lang-ja-blue)](README.ja.md) [![GitHub](https://img.shields.io/badge/GitHub-repository-black)](https://github.com/ohara-lab-su/cap_inspector) [![GitHub Pages](https://img.shields.io/badge/GitHub-Pages-blue)](https://ohara-lab-su.github.io/cap_inspector/) [![Ohara Lab](https://img.shields.io/badge/Ohara-Lab-green)](https://ohara-lab-su.github.io/)
 
-## 機能
+Python package for red-cap position inspection using OpenCV, with a gRPC client/server powered by `grpc_frame`.
 
-- カメラ画像から赤色領域を抽出し、キャップの輪郭・傾斜・形状・底面位置を解析
-- 瓶の基準線に対するキャップ位置から開閉状態を判定
-- `inspect()` による1フレームの真偽判定
-- `get_image()` と `image_stream()` による画像取得
-- パラメータの個別変更、一括変更、JSONへの保存・読込
-- ローカルビューアーおよびgRPCクライアントビューアー
+日本語: [README.ja.md](README.ja.md) · [English documentation](docs/en/index.md) · [日本語ドキュメント](docs/ja/index.md)
 
-## ディレクトリ構成
+## Features
 
-```text
-src/cap_inspector/
-    __init__.py
-    cap_inspector.py
-    viewer.py
-    server_grpc/
-        __init__.py
-        client.py
-        make_pyi.py
-        server.py
-examples/
-    cap_inspector_parameters.json
-    client_example.py
-    gui_client.py
-    parameter_client.py
-    roi_client.py
-    server_example.py
-    set_parameters_client.py
+- HSV red-region segmentation, contour geometry, cap tilt and height inspection.
+- `inspect(mode)` captures one frame, evaluates both open/closed conditions, and returns the selected mode's boolean result.
+- `is_open()`, `is_closed()`, `is_safe()` and `get_status()` read the most recent inspection state **without capturing another frame**.
+- Runtime parameter updates, JPEG image retrieval, image streaming and remote GUI over `grpc_frame`.
+- `run()` is the local camera test; `examples/gui_client.py` is the operational remote viewer.
+
+## Installation
+
+```bash
+pip install -e .
 ```
 
-## 基本的な使い方
+The distribution names are `grpc-frame` and `xlogger-py` (imported as `grpc_frame` and `x_logger`). GUI requires PySide6.
+
+## Example
 
 ```python
 from cap_inspector import CapInspector
 
-inspector = CapInspector(
-    camera_id=0,
-    BOTTLE_RIM_Y=275,
-    MM_TO_PIXEL=4.0,
-    TARGET_CLOSE_MM=0.5,
-    TARGET_OPEN_MM=3.5,
-    TOLERANCE_MM=1.0,
-    current_mode="closed",
-)
-
+inspector = CapInspector(current_mode="closed")
 try:
-    inspector.start_camera()
-    is_closed = inspector.inspect()
-    print(is_closed)
-    print(inspector.get_status())
+    result = inspector.inspect("closed")
+    print(result, inspector.is_closed(), inspector.is_open())
+    inspector.set_target_open_mm(3.5)
+    inspector.set_parameters({"BOTTLE_RIM_Y": 275, "MM_TO_PIXEL": 4.0})
 finally:
     inspector.release()
 ```
 
-コンストラクタ引数は初期値です。運用中は `set_parameters()` または個別の `set_xxx()` メソッドで変更できます。
+Run the server with `python examples/server_example.py` and the remote GUI with `python examples/gui_client.py`. Configure HOST and PORT in each script. For client-side JSON parameter management see `examples/parameter_client.py` and `examples/set_parameters_client.py`.
 
-```python
-inspector.set_bottle_rim_y(280)
-inspector.set_target_open_mm(3.5)
-inspector.set_mode("opened")
-inspector.set_parameters({"MM_TO_PIXEL": 4.0, "TOLERANCE_MM": 1.0})
-```
+## Client type stubs
 
-設定の詳細は `examples/set_parameters_client.py` と `examples/parameter_client.py` を参照してください。
+The package maintainer generates `src/cap_inspector/server_grpc/client.pyi` before building and publishing a release by running `python -m cap_inspector.server_grpc.make_pyi` in the development environment. This command delegates to the existing `grpc_frame.make_pyi` implementation; it does not implement a separate stub generator. The generated `client.pyi` is included in the distributed package so users do not need to generate it.
 
-## gRPCサーバー・クライアント
+## Important behavior
 
-`grpc_frame` を使用して画像認識クラスの公開メソッドを遠隔呼び出しできます。サーバーとクライアントの起動例は次のファイルです。
+`get_image()` and `image_stream()` also process frames and update the shared inspection state. When using concurrent clients, the last processed frame determines the state. `is_open()` and `is_closed()` do not perform additional processing. The inspection thresholds for opened and closed are independent; if their tolerance bands overlap, both flags may be true.
 
-- `examples/server_example.py`：サーバー起動
-- `examples/client_example.py`：クライアントからの判定
-- `examples/gui_client.py`：gRPC接続によるGUIビューアー（通常運用）
-- `src/cap_inspector/viewer.py`：ローカル／gRPC共通の表示処理
+## License
 
-接続先や画像取得間隔などは各サンプル内の設定値を変更してください。
-
-## 型スタブ
-
-クライアントの型スタブは、`grpc_frame` に含まれる生成機能を利用します。`grpc_frame` がインストールされた環境で、プロジェクトルートから実行してください。
-
-```bash
-python src/cap_inspector/server_grpc/make_pyi.py
-```
-
-生成先は `src/cap_inspector/server_grpc/client.pyi` です。
-
-## 判定パラメータ
-
-- `BOTTLE_RIM_Y`：瓶の基準線の画像上のY座標
-- `MM_TO_PIXEL`：距離換算係数
-- `TARGET_CLOSE_MM`：閉栓判定の目標位置
-- `TARGET_OPEN_MM`：開栓判定の目標位置
-- `TOLERANCE_MM`：位置判定の許容差
-- `current_mode`：判定対象の状態（`closed` / `opened`）
-
-旧方式のROIによる検出範囲指定や `calibrate()` は使用しません。基準線・換算係数はパラメータとして設定します。
-
-## 動作確認
-
-`CapInspector.run()` は、カメラ画像の認識結果をローカル表示するテスト用ルーチンです。通常の遠隔操作にはgRPCクライアントを使用してください。
+Apache-2.0. See `LICENSE`.
