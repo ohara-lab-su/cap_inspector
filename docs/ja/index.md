@@ -2,38 +2,21 @@
 
 [![English](https://img.shields.io/badge/lang-en-blue)](https://ohara-lab-su.github.io/cap_inspector/en/index.html) [![日本語](https://img.shields.io/badge/lang-ja-blue)](https://ohara-lab-su.github.io/cap_inspector/ja/index.html) [![GitHub](https://img.shields.io/badge/GitHub-repository-black)](https://github.com/ohara-lab-su/cap_inspector) [![GitHub Pages](https://img.shields.io/badge/GitHub-Pages-blue)](https://ohara-lab-su.github.io/cap_inspector/) [![Ohara Lab](https://img.shields.io/badge/Ohara-Lab-green)](https://ohara-lab-su.github.io/)
 
-OpenCVを用いてボトルキャップの開閉状態を検査する画像認識パッケージです。主眼はキャップの色の変更ではなく、**認識アルゴリズムと判定基準の明確化による検査の安定性・再現性の向上**にあります。照明条件の変動による誤検出・検出失敗を抑えることを目的として、候補領域の抽出後に形状・傾き・底面位置を評価し、浮き量を数値的に判定します。赤色だけでなく黒色のキャップも対象とするプロジェクトです。ローカルカメラでの検査、JSONによる設定管理、gRPCによる遠隔操作・画像配信、GUIビューアーに対応します。
+キャップの開閉を、カメラ画像から抽出した輪郭の形状・傾き・底面位置と、明示的な浮き量の許容範囲に基づいて判定するPythonパッケージです。認識の安定性と再現性を高め、照明条件による検出失敗を抑えることを目的としています。赤色・黒色のキャップを扱う構想ですが、現在の色抽出コードは赤色用です。
 
-## 画像認識と開閉判定
+## ドキュメントの構成
 
-現行の赤色キャップ向け検出設定では、以下の処理を使用します。色抽出条件は検出対象に依存し、黒色キャップに同じHSV閾値を適用するものではありません。照明変動に対する完全な不変性を保証するものではなく、撮影条件と検出設定の適合が必要です。
-
-1. カメラ画像をHSV色空間に変換し、赤色の2領域（H 0–10、170–180、S 120–255、V 70–255）を抽出してマスクを結合します。
-2. 5 × 5カーネルによるオープニング、クロージングの順にマスクを整形します。外部輪郭を抽出し、面積500 pixel²を超える輪郭を処理します。
-3. 各輪郭に最小面積回転矩形を当てはめ、傾きが3°未満、幅と高さの比が2.3–2.8であることを確認します。
-4. 回転矩形のY座標が大きい2頂点からキャップ底面を求め、瓶の基準線からの浮き量を計算します。
-
-   `lift_mm = (BOTTLE_RIM_Y - cap_bottom_y) / MM_TO_PIXEL`
-
-5. 浮き量を開栓・閉栓それぞれの目標値と比較します。初期値は閉栓0.5 mm、開栓3.5 mm、許容差はそれぞれ±1.0 mmです。
-
-基準線と画素・距離換算係数は撮影系の幾何条件に依存するため、設置環境に合わせて設定します。条件を満たす輪郭をすべて処理し、現在の代表状態には最後に処理した輪郭の結果を保持します。キャップを検出できなかったフレームは検査不合格です。
-
-`inspect(mode)` は1フレームの撮影・画像認識を行い、開栓・閉栓の両フラグを更新して、`"closed"` または `"opened"` の指定条件に対する判定結果を返します。`is_closed()` と `is_open()` は直近のフラグを返すだけで再撮影しません。取得できる状態は直近の検査時点のものであり、連続監視値ではありません。
-
-## 運用
-
-遠隔GUIビューアーは `examples/gui_client.py` で起動します。ローカルビューアーと `run()` はテスト用です。設定値は `set_parameters()` または個別setterで更新でき、JSON形式で保存できます。
-
-## 関連情報
-
-- [API](https://ohara-lab-su.github.io/cap_inspector/ja/api.html)
-- [使用例](https://ohara-lab-su.github.io/cap_inspector/ja/examples.html)
+- **利用ガイド**：設置条件、検査アルゴリズム、判定基準、設定方法。
+- **APIの使い方**：`inspect()` と状態取得、画像取得、パラメータ管理、gRPCの責務と利用方法。
+- **使用例**：ローカル・遠隔検査、GUI、設定ファイルの利用。
+- **自動生成API**：ソースコードのGoogle-style docstringから生成するクラス・メソッドリファレンス。
 
 ```{toctree}
 :maxdepth: 2
-:caption: Contents
+:caption: 目次
 
-api
+guide
+api_guide
 examples
+api/modules
 ```
