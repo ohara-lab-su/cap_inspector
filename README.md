@@ -1,6 +1,6 @@
 # cap_inspector
 
-**English** | [日本語](README.ja.md) | [GitHub](https://github.com/ohara-lab-su/cap_inspector)
+[![en](https://img.shields.io/badge/lang-en-red.svg)](https://github.com/ohara-lab-su/cap_inspector/blob/main/README.md) [![ja](https://img.shields.io/badge/lang-ja-yellow.svg)](https://github.com/ohara-lab-su/cap_inspector/blob/main/README.ja.md) [![GitHub](https://img.shields.io/badge/GitHub-repository-black)](https://github.com/ohara-lab-su/cap_inspector) [![GitHub Pages](https://img.shields.io/badge/GitHub-Pages-blue)](https://ohara-lab-su.github.io/cap_inspector/) [![Ohara Lab](https://img.shields.io/badge/Ohara-Lab-green)](https://ohara-lab-su.github.io/)
 
 **cap_inspector** is a Python package for inspecting whether bottle caps are open or closed using camera images. It combines OpenCV-based inspection, local operation, gRPC remote control and image streaming, and a GUI viewer.
 
