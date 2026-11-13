@@ -10,6 +10,7 @@ def cap_inspector_server(
     grpc_host: str,
     grpc_port: int,
     camera_id: int = 0,
+    inspector_parameters: Optional[dict] = None,
     grpc_options: Optional[Sequence[Tuple[str, Any]]] = None,
     logger: Optional[Any] = None,
 ) -> None:
@@ -20,7 +21,10 @@ def cap_inspector_server(
             ("grpc.max_receive_message_length", 16 * 1024 * 1024),
         )
 
-    cap = CapInspector(camera_id=camera_id, logger=logger)
+    parameters = {"camera_id": camera_id}
+    if inspector_parameters is not None:
+        parameters.update(inspector_parameters)
+    cap = CapInspector(logger=logger, **parameters)
     server = create_grpc_server(
         ctrl_obj=cap,
         stream_obj=cap,

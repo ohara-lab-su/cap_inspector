@@ -1,0 +1,9 @@
+{
+  "camera_id": 0,
+  "BOTTLE_RIM_Y": 275,
+  "MM_TO_PIXEL": 4.0,
+  "TARGET_CLOSE_MM": 0.5,
+  "TARGET_OPEN_MM": 3.5,
+  "TOLERANCE_MM": 1.0,
+  "mode": "closed"
+}

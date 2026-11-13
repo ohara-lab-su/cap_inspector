@@ -1,19 +1,20 @@
 [build-system]
-requires = ["setuptools>=68"]
+requires = ["setuptools>=61", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "cap-inspector"
+name = "cap_inspector"
 version = "0.1.0"
-description = "Camera-based cap inspection service for robot operation verification"
+description = "OpenCV-based cap position and opening-state inspection over gRPC"
+readme = "README.md"
 requires-python = ">=3.10"
+license = { text = "Apache-2.0" }
 dependencies = [
     "numpy",
     "opencv-python",
-    "Pillow",
+    "PySide6",
     "grpc-frame",
     "xlogger-py",
-    "pyside6",
 ]
 
 [tool.setuptools.packages.find]
