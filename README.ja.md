@@ -1,6 +1,6 @@
 # cap_inspector
 
-[English](README.md) | **日本語** | [GitHub](https://github.com/ohara-lab-su/cap_inspector)
+[![en](https://img.shields.io/badge/lang-en-red.svg)](https://github.com/ohara-lab-su/cap_inspector/blob/main/README.md) [![ja](https://img.shields.io/badge/lang-ja-yellow.svg)](https://github.com/ohara-lab-su/cap_inspector/blob/main/README.ja.md) [![GitHub](https://img.shields.io/badge/GitHub-repository-black)](https://github.com/ohara-lab-su/cap_inspector) [![GitHub Pages](https://img.shields.io/badge/GitHub-Pages-blue)](https://ohara-lab-su.github.io/cap_inspector/) [![Ohara Lab](https://img.shields.io/badge/Ohara-Lab-green)](https://ohara-lab-su.github.io/)
 
 **cap_inspector** は、カメラ画像からボトルキャップの開閉状態を検査するPythonパッケージです。OpenCVによる画像認識、ローカル検査、gRPCを介した遠隔検査・画像配信、GUIによる状態確認を提供します。
 
