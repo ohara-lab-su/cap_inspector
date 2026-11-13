@@ -2,9 +2,11 @@
 
 [English](README.md) | [日本語](README.ja.md) | [Documentation](https://ohara-lab-su.github.io/cap_inspector/en/index.html) | [GitHub](https://github.com/ohara-lab-su/cap_inspector)
 
-OpenCV-based inspection of red bottle caps. The package determines whether a cap meets configured open or closed position criteria using its geometry and vertical displacement. It provides local camera inspection, JSON parameter management, gRPC remote access, image streaming, and a GUI viewer.
+An OpenCV-based package for inspecting whether bottle caps are open or closed. Its primary goal is **more stable and reproducible inspection through a better-defined recognition algorithm and explicit acceptance criteria**, not a change in cap color. To reduce missed detections and false positives caused by lighting variations, the inspection evaluates candidate regions using geometry, tilt, and bottom-edge position, then applies numerical lift criteria. The project covers black as well as red caps. It supports local camera inspection, JSON configuration, gRPC remote control and image streaming, and a GUI viewer.
 
 ## Image recognition and inspection
+
+The current red-cap detection configuration uses the following processing steps. Color segmentation depends on the target: the same HSV thresholds must not be assumed to work for black caps. This does not guarantee invariance to lighting; imaging conditions and detection settings must still be matched.
 
 1. Convert the camera frame to HSV and combine masks for the two red hue ranges (H 0–10 and 170–180; S 120–255, V 70–255).
 2. Apply morphological opening followed by closing with a 5 × 5 kernel. Extract external contours and examine contours with an area greater than 500 pixels².
