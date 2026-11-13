@@ -1,6 +1,6 @@
 # cap_inspector
 
-[English](https://ohara-lab-su.github.io/cap_inspector/en/index.html) | [日本語](https://ohara-lab-su.github.io/cap_inspector/ja/index.html) | [GitHub](https://github.com/ohara-lab-su/cap_inspector)
+[![English](https://img.shields.io/badge/lang-en-blue)](https://ohara-lab-su.github.io/cap_inspector/en/index.html) [![日本語](https://img.shields.io/badge/lang-ja-blue)](https://ohara-lab-su.github.io/cap_inspector/ja/index.html) [![GitHub](https://img.shields.io/badge/GitHub-repository-black)](https://github.com/ohara-lab-su/cap_inspector) [![GitHub Pages](https://img.shields.io/badge/GitHub-Pages-blue)](https://ohara-lab-su.github.io/cap_inspector/) [![Ohara Lab](https://img.shields.io/badge/Ohara-Lab-green)](https://ohara-lab-su.github.io/)
 
 An OpenCV-based package for inspecting whether bottle caps are open or closed. Its primary goal is **more stable and reproducible inspection through a better-defined recognition algorithm and explicit acceptance criteria**, not a change in cap color. To reduce missed detections and false positives caused by lighting variations, the inspection evaluates candidate regions using geometry, tilt, and bottom-edge position, then applies numerical lift criteria. The project covers black as well as red caps. It supports local camera inspection, JSON configuration, gRPC remote control and image streaming, and a GUI viewer.
 
@@ -27,5 +27,13 @@ The gRPC client viewer is provided in `examples/gui_client.py`. The local viewer
 
 ## Further information
 
-- [API](api.md)
-- [Examples](examples.md)
+- [API](https://ohara-lab-su.github.io/cap_inspector/en/api.html)
+- [Examples](https://ohara-lab-su.github.io/cap_inspector/en/examples.html)
+
+```{toctree}
+:maxdepth: 2
+:caption: Contents
+
+api
+examples
+```
